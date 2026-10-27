@@ -100,6 +100,12 @@ impl MailAttachmentFiles {
         )
     }
     fn url(&self, key: &str) -> Result<String, AttachmentError> {
+        let url = format!("{}/{}", self.distribution_url, urlencoding::encode(key));
+        // Local stacks have no CloudFront signer; like document URLs, the
+        // distribution URL is the stack's storage route itself.
+        if macro_aws_config::is_local_aws() {
+            return Ok(url);
+        }
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|_| AttachmentError::Infrastructure)?
@@ -110,11 +116,7 @@ impl MailAttachmentFiles {
             private_key: self.private_key.clone(),
             ..Default::default()
         };
-        cloudfront_sign::get_signed_url(
-            &format!("{}/{}", self.distribution_url, urlencoding::encode(key)),
-            &options,
-        )
-        .map_err(|_| AttachmentError::Infrastructure)
+        cloudfront_sign::get_signed_url(&url, &options).map_err(|_| AttachmentError::Infrastructure)
     }
 }
 fn failed<E: std::fmt::Debug>(error: E) -> AttachmentError {

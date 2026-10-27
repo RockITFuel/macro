@@ -217,6 +217,17 @@ impl LocalEnv {
         // sent cross-site.
         if self.self_host.is_public() {
             env.insert("COOKIE_SAME_SITE".into(), "Lax".into());
+            // Attachment downloads, like documents, go through the proxy's
+            // restricted storage route. (The localhost boot stub is kept for
+            // local development.)
+            env.insert(
+                "EMAIL_SERVICE_CLOUDFRONT_DISTRIBUTION_URL".into(),
+                format!(
+                    "{}/local-storage/{}",
+                    self.frontend_origin,
+                    resources::bucket_name("ATTACHMENT_BUCKET")
+                ),
+            );
         }
         if let Some(domains) = &self.self_host.signup_allowed_domains {
             env.insert("SIGNUP_ALLOWED_DOMAINS".into(), domains.clone());

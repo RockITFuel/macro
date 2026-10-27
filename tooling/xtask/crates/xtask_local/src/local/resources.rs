@@ -326,6 +326,15 @@ pub const BUCKETS: &[Bucket] = &[
     },
 ];
 
+/// The name of the bucket services find through `env_key`.
+pub fn bucket_name(env_key: &str) -> &'static str {
+    BUCKETS
+        .iter()
+        .find(|bucket| bucket.env_key == env_key)
+        .map(|bucket| bucket.name)
+        .unwrap_or_else(|| panic!("no bucket is referenced by {env_key}"))
+}
+
 /// Every local DynamoDB table and the env var that references it.
 pub const TABLES: &[Table] = &[
     Table {

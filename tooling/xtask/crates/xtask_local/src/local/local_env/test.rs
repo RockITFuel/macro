@@ -843,6 +843,7 @@ fn a_configured_smtp_server_reaches_the_services() {
         "SMTP_FROM",
         "COOKIE_SAME_SITE",
         "SIGNUP_ALLOWED_DOMAINS",
+        "EMAIL_SERVICE_CLOUDFRONT_DISTRIBUTION_URL",
     ] {
         assert!(!default.contains_key(key), "{key}");
     }
@@ -871,5 +872,9 @@ fn a_configured_smtp_server_reaches_the_services() {
     assert_eq!(env["SMTP_PASSWORD"], "smtp-secret");
     assert_eq!(env["SMTP_FROM"], "Macro <noreply@example.com>");
     assert_eq!(env["COOKIE_SAME_SITE"], "Lax");
+    assert_eq!(
+        env["EMAIL_SERVICE_CLOUDFRONT_DISTRIBUTION_URL"],
+        "https://macro.example.com/local-storage/macro-email-attachments"
+    );
     assert_eq!(env["SIGNUP_ALLOWED_DOMAINS"], "example.com,example.org");
 }
