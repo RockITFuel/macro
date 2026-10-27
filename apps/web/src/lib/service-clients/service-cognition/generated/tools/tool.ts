@@ -454,6 +454,7 @@ type ToolParserMap = {
   };
   RenameItem: { call: types.RenameItem; response: types.RenameItemResponse };
   RenderCanvas: { call: types.RenderCanvas; response: types.CanvasRender };
+  RenderHtml: { call: types.RenderHtml; response: types.RenderHtmlResponse };
   ResolveComment: {
     call: types.ResolveComment;
     response: types.ResolveCommentResponse;
@@ -1043,6 +1044,10 @@ const toolParserMap = {
     response: schemas.RenameItemResponse,
   },
   RenderCanvas: { call: schemas.RenderCanvas, response: schemas.CanvasRender },
+  RenderHtml: {
+    call: schemas.RenderHtml,
+    response: schemas.RenderHtmlResponse,
+  },
   ResolveComment: {
     call: schemas.ResolveComment,
     response: schemas.ResolveCommentResponse,
@@ -1604,6 +1609,7 @@ type ToolDataMap = {
   };
   RenameItem: { call: types.RenameItem; response: types.RenameItemResponse };
   RenderCanvas: { call: types.RenderCanvas; response: types.CanvasRender };
+  RenderHtml: { call: types.RenderHtml; response: types.RenderHtmlResponse };
   ResolveComment: {
     call: types.ResolveComment;
     response: types.ResolveCommentResponse;

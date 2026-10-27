@@ -14726,6 +14726,45 @@ export interface RenderCanvas {
   crop?: CanvasBounds | null;
 }
 /**
+ * Show a finished, self-contained HTML page (chart, table, diagram, dashboard, mockup) inline in this conversation, above your reply, and save it as an HTML document in the user's Visuals folder, to open and share. Call it before your final reply; the reply adds only what the page does not say. Read the Show Visuals skill before your first page. One document with inline <style> and <script>, run in a sandbox: no network requests, storage, forms or popups; scripts only from cdn.jsdelivr.net, unpkg.com or cdnjs.cloudflare.com; images as data: URLs or SVG. Leave html and body transparent, use fluid widths and fixed pixel heights for charts, never 100vh. Style it with Macro's theme variables on :root, which follow the user's light or dark mode: --foreground, --muted-foreground, --subtle-foreground, --card, --muted, --border, --border-muted, --accent, --accent-surface, --link, --success, --warning, --failure, --chart-1 to --chart-9 (series colors, in order), --font-sans, --font-mono, --text-xs to --text-2xl, --radius-sm, --radius, --radius-lg, --space-1 to --space-8. Plain headings, tables, code and buttons are already styled. Returns warnings for anything the sandbox or layout will break; fix them and render again. Pages up to 256 KB.
+ */
+export interface RenderHtml {
+  /**
+   * A short name for the page, also the saved document's name (at most 120 characters).
+   */
+  title: string;
+  /**
+   * A complete, self-contained HTML document.
+   */
+  html: string;
+  /**
+   * Frame height in CSS pixels, 80-2000. The frame shrinks to a shorter page; a taller page scrolls inside the frame.
+   */
+  height: number;
+}
+/**
+ * What the tool returns.
+ */
+export interface RenderHtmlResponse {
+  /**
+   * The saved HTML document.
+   */
+  documentId: string;
+  /**
+   * The user's "Visuals" folder the document is saved in.
+   */
+  projectId: string;
+  /**
+   * The frame height used, after clamping to 80-2000.
+   */
+  height: number;
+  /**
+   * What to fix before the page renders as intended; render again after
+   * fixing. Absent when nothing stands out.
+   */
+  warnings?: string[];
+}
+/**
  * Resolve or reopen a comment thread in the Discussion of a document, task, Tasks project, CRM company or CRM contact on behalf of the user. A thread id is enough to find its item. Only use this when explicitly asked to resolve or reopen a comment. Thread ids come from ReadDiscussion, or from ReadContent for a document.
  */
 export interface ResolveComment {

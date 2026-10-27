@@ -210,6 +210,38 @@ bytes reached storage; previews, DOCX conversion, Markdown initialization, and
 indexing may finish asynchronously. Invalid contents, oversized files, and folder
 permission failures should display a failed tool call without a successful result.
 
+## Rendering HTML pages inline
+
+`RenderHtml` (AI chat and agent sessions; not channel bots or MCP) takes a
+`title`, a self-contained `html` document of at most 256 KB and a frame
+`height` (80-2000 px). It saves the page as an HTML document in the user's
+top-level `Visuals` folder (created on the first render, reused after) and
+shows it inline in the reply, outside tool groups, with the saved
+document under it to open or share. The frame fits a shorter page and scrolls a
+taller one. The page runs in `<iframe sandbox="allow-scripts" srcdoc>` (opaque
+origin: no Macro cookies, storage or APIs) behind a Content-Security-Policy
+that allows inline code and scripts from cdn.jsdelivr.net, unpkg.com and
+cdnjs.cloudflare.com, images and fonts only as `data:`/`blob:`, and no
+`fetch`, forms, frames or base URL. Clicked http(s) links open in a new tab;
+a page that navigates its frame is put back, at most twice, then removed (the navigation request itself can
+still leave the browser; accepted, since pages come from Macro's own agents). The page follows the app theme
+through Macro's design tokens as CSS variables (text, surfaces, borders,
+accent, status colors, the `--chart-1`..`--chart-9` series palette from
+`database-query/core/chart-palette.ts`, type sizes, radii and spacing), live
+on light/dark switches, and a base stylesheet styles plain headings, tables,
+code, links and buttons. The app's webfont cannot load in the sandbox, so pages
+use the system UI font. `RenderHtml` is an eager tool and returns `warnings`
+(blocked resources, viewport heights, page backgrounds, wide fixed widths, no
+theme variables) that the agent fixes and renders again. The `Showing visuals`
+prompt section (chat and sessions; sessions add `Asking a question` for
+`AskUser`) and the `Show Visuals` system skill tell agents when to render, the
+page rules, the variables and how to draw charts. The rendering is from the call's arguments, so
+it survives reloads for anyone who can read the transcript.
+
+The backend-free browser check is
+`bunx playwright test --config src/features/agent-interactions/browser-test/playwright.config.ts`
+(from `apps/web`); it also covers `AskUser` previews.
+
 ## Generating images with AI
 
 `GenerateImage` takes a text prompt, renders it with Google's Nano Banana image
@@ -1212,6 +1244,10 @@ ask you something. A card titled `<bot> is asking` with trailing text `Waiting f
 appears in the transcript, and the notice `The agent is waiting for your answer above` sits
 over the composer. Forms have one control per field (radios for a choice, an `Other` text
 box when the agent allows a custom answer, checkboxes for multi-select, text/number inputs)
+with each option's description under its label. Macro's own agent asks through `AskUser`:
+2-4 options, `Other` on by default, optional multi-select, and optional per-option previews
+shown in a monospace box under the choices for the option under the pointer or focus, else
+the chosen one
 plus `Submit` / `Decline` / `Cancel`; a link request shows the target host and URL with an
 `Open` button that only opens a new tab after you click it. Once answered the card collapses
 to `Question · <text>` with `Answered` / `Declined` / `Cancelled` on the right and the agent

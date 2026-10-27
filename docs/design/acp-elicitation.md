@@ -265,7 +265,7 @@ collapses each pair in `fold/elicitation.rs`; everything else is plain ACP.
 | Hermes Agent | `hermes-agent` | no (PR #30089 unmerged would add `answer` + `other_answer`) | `clarify` excluded from the ACP toolset | n/a |
 | OpenClaw bridge | `openclaw-acp` | no | `ask_user` shows as `tool_call` `title:"ask_user: …"`, blocks the Gateway run; cannot be answered over ACP | n/a (times out → `no_answer`) |
 | Goose | — | yes, form, MCP-originated | plain ACP | JSON-RPC response |
-| Macro in-memory agent | `macro-inmem` | yes — form, when the client advertises it | model-callable `AskUser` asks one required free-text or single-choice question; `/ask` remains the deterministic end-to-end rig | JSON-RPC response |
+| Macro in-memory agent | `macro-inmem` | yes — form, when the client advertises it | model-callable `AskUser` asks one free-text, single- or multi-choice question (2-4 options with descriptions, optional preview sketches under `_meta.macro.preview`, and an `answer_custom` "Other" companion marked like Claude Code's); `/ask` remains the deterministic end-to-end rig | JSON-RPC response |
 | Gemini CLI, Kimi, Cursor cloud | — | no | — | — |
 
 Consequences already built in:
@@ -306,7 +306,11 @@ branch:
   from the adapters' documented output; each reader's idiom pinned in
   `test/harness_readers.rs`.
 - `agent_inmem`: model-callable `AskUser` sends a real `elicitation/create`
-  through a domain user-input port; `/ask <question> | option | option`
+  through a domain user-input port: a header as the form title, titled
+  options with descriptions, a multi-select array when asked, previews on
+  each option's `_meta.macro.preview` (the fold carries them as
+  `ElicitationOption.preview`), and the shared "Other" marker on
+  `answer_custom` unless the agent sets `allowOther: false`; `/ask <question> | option | option`
   remains the deterministic end-to-end rig in local and deployed development
   environments. The host passes an explicit development-command setting into
   the in-memory manager; it defaults off, and production treats `/ask` as

@@ -28,6 +28,7 @@ pub mod tone;
 pub mod tool_usage;
 mod types;
 pub mod user_tools;
+pub mod visuals;
 
 pub use types::{ComposedPrompt, Section, StaticPrompt};
 
@@ -65,6 +66,7 @@ pub static TOOL_USE_PROMPT: ComposedPrompt = BASE_PROMPT
     .compose(&crm_pipelines::PROMPT)
     .compose(&user_tools::BOOKING_PROMPT)
     .compose(&user_tools::PROMPT)
+    .compose(&visuals::PROMPT)
     .compose(&skills::PROMPT)
     .compose(&document_content_links::PROMPT)
     .compose(&email::PROMPT);
@@ -79,6 +81,7 @@ pub static SESSION_TOOL_USE_PROMPT: ComposedPrompt = BASE_PROMPT
     .compose(&crm_pipelines::PROMPT)
     .compose(&user_tools::BOOKING_PROMPT)
     .compose(&user_tools::SESSION_PROMPT)
+    .compose(&visuals::SESSION_PROMPT)
     .compose(&skills::PROMPT)
     .compose(&document_content_links::PROMPT)
     .compose(&email::PROMPT);
@@ -90,6 +93,7 @@ pub static CODE_MODE_SESSION_TOOL_USE_PROMPT: ComposedPrompt = BASE_PROMPT
     .compose(&crm_pipelines::PROMPT)
     .compose(&user_tools::BOOKING_PROMPT)
     .compose(&user_tools::CODE_MODE_SESSION_PROMPT)
+    .compose(&visuals::SESSION_PROMPT)
     .compose(&skills::PROMPT)
     .compose(&document_content_links::PROMPT)
     .compose(&email::PROMPT);
@@ -399,5 +403,25 @@ mod tests {
         }
         assert!(in_app.contains("non-Markdown documents"));
         assert!(in_app.contains("apply to your own conversational replies only"));
+    }
+
+    #[test]
+    fn visuals_guidance_reaches_hosts_that_render_pages_and_asking_only_sessions() {
+        let chat = TOOL_USE_PROMPT.to_string();
+        assert!(chat.contains("`RenderHtml`"));
+        assert!(chat.contains("`Show Visuals` skill"));
+        assert!(!chat.contains("## Asking a question"));
+
+        for session in [
+            SESSION_TOOL_USE_PROMPT.to_string(),
+            CODE_MODE_SESSION_TOOL_USE_PROMPT.to_string(),
+        ] {
+            assert!(session.contains("`RenderHtml`"));
+            assert!(session.contains("## Asking a question"));
+            assert!(session.contains("`multiSelect`"));
+        }
+
+        // Channel bots and MCP clients have no transcript to show a page in.
+        assert!(!DIRECT_TOOL_USE_PROMPT.to_string().contains("`RenderHtml`"));
     }
 }

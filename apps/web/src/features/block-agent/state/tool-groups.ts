@@ -32,6 +32,7 @@ export type PartSegment = {
  * it: `DisplayResults` renders the dynamic-UI view the model composed, the
  * same full-width dashboard the chat shows. `GenerateImage` shows the generated
  * image document. `DispatchCodingAgent` shows the dispatched session's Magic Chip.
+ * `RenderHtml` shows the agent's HTML page.
  *
  * Folding one of these into a group would put the answer behind a closed
  * caret, indented inside a row of muted tool chips — so they break the run
@@ -41,6 +42,7 @@ const SELF_RENDERING_TOOLS: ReadonlySet<string> = new Set([
   'DispatchCodingAgent',
   'DisplayResults',
   'GenerateImage',
+  'RenderHtml',
 ]);
 
 /**

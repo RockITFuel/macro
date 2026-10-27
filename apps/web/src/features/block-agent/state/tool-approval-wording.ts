@@ -161,6 +161,7 @@ const MACRO_TOOLS: Record<MacroToolName, Wording | null> = {
   RemoveFromPipeline: (whose) => `remove deals from ${whose} pipelines`,
   RenameChannel: (whose) => `rename ${whose} channels`,
   RenameDocument: (whose) => `rename ${whose} documents`,
+  RenderHtml: (whose) => `save a page to ${whose} workspace`,
   RenameItem: (whose) => `rename items in ${whose} workspace`,
   ResolveComment: (whose) => `resolve or reopen comments on ${whose} items`,
   RunRoutine: (whose) => `run ${whose} routines`,

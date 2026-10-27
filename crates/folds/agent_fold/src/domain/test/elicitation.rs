@@ -1079,3 +1079,38 @@ fn a_form_scoped_to_an_ordinary_tool_call_stays_a_form() {
         "not a user tool: {request:?}"
     );
 }
+
+/// Macro's `AskUser`: a titled select whose options carry descriptions and
+/// a preview under `_meta.macro.preview`, plus the shared "Other" companion.
+const MACRO_ASK_USER: &str = r#"{"direction":"to_server","content":{"type":"acp","jsonrpc":"2.0","id":7,"method":"elicitation/create","params":{"mode":"form","sessionId":"s","message":"Which layout?","requestedSchema":{"type":"object","title":"Layout","properties":{"answer":{"type":"string","title":"Layout","oneOf":[{"const":"Sidebar","title":"Sidebar","description":"Recommended","_meta":{"macro":{"preview":"| nav | page |"}}},{"const":"Tabs","title":"Tabs","_meta":{"macro":{"preview":"   "}}}]},"answer_custom":{"type":"string","title":"Other","_meta":{"_askUserQuestionCustomAnswer":{"questionId":"answer","isCustomAnswer":true}}}}}}}}"#;
+
+#[test]
+fn macro_ask_user_options_carry_descriptions_and_previews() {
+    let (machine, _) = drive(&lines(&[&announce("macro-inmem"), PROMPT, MACRO_ASK_USER]));
+    let parts = elicitations(&machine);
+    let MessagePart::Elicitation {
+        request: ElicitationRequest::Form { schema },
+        ..
+    } = parts[0]
+    else {
+        panic!("a form");
+    };
+    assert_eq!(schema.title.as_deref(), Some("Layout"));
+    assert_eq!(
+        schema.properties.len(),
+        1,
+        "the Other companion folded away"
+    );
+    let ElicitationPropertySchema::String {
+        options,
+        custom_field,
+        ..
+    } = &schema.properties[0].schema
+    else {
+        panic!("a select");
+    };
+    assert_eq!(custom_field.as_deref(), Some("answer_custom"));
+    assert_eq!(options[0].description.as_deref(), Some("Recommended"));
+    assert_eq!(options[0].preview.as_deref(), Some("| nav | page |"));
+    assert_eq!(options[1].preview, None, "a blank preview is none");
+}

@@ -2182,10 +2182,7 @@ impl TurnEngine for AskingEngine {
                 .user_input
                 .expect("the client advertised forms, so the turn can ask");
             let outcome = requester
-                .ask(UserInputRequest {
-                    question: "Which colour?".to_owned(),
-                    options: Vec::new(),
-                })
+                .ask(UserInputRequest::free_text("Which colour?"))
                 .await;
             let text = match outcome {
                 Ok(UserInputOutcome::Answered(answer)) => format!("You said {answer}."),
@@ -2835,4 +2832,144 @@ fn a_turn_that_ends_on_a_tool_call_has_not_replied() {
 
     output.observe(&StreamPart::Content("Found it.".to_owned()));
     assert!(output.replied);
+}
+
+fn report_question(multi_select: bool, allow_other: bool) -> UserInputRequest {
+    UserInputRequest {
+        question: "What should the report include?".to_owned(),
+        header: Some("Report".to_owned()),
+        options: vec![
+            UserInputOption {
+                label: "Charts".to_owned(),
+                description: Some("Bar and line charts".to_owned()),
+                preview: Some("[####    ]".to_owned()),
+            },
+            UserInputOption::label("Tables"),
+            UserInputOption::label("Summary"),
+        ],
+        multi_select,
+        allow_other,
+    }
+}
+
+fn accepted(
+    entries: Vec<(&str, ElicitationContentValue)>,
+) -> BTreeMap<String, ElicitationContentValue> {
+    entries
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value))
+        .collect()
+}
+
+#[test]
+fn a_question_form_carries_header_descriptions_previews_and_the_other_marker() {
+    let schema = question_form_schema(&report_question(false, true));
+    let wire = serde_json::to_value(&schema).expect("the schema serializes");
+
+    assert_eq!(wire["title"], "Report");
+    let answer = &wire["properties"][ASK_FIELD];
+    assert_eq!(answer["title"], "Report");
+    assert_eq!(answer["oneOf"][0]["const"], "Charts");
+    assert_eq!(answer["oneOf"][0]["description"], "Bar and line charts");
+    assert_eq!(
+        answer["oneOf"][0]["_meta"]["macro"]["preview"],
+        "[####    ]"
+    );
+    assert!(answer["oneOf"][1].get("_meta").is_none());
+    let other = &wire["properties"][ASK_OTHER_FIELD];
+    assert_eq!(other["title"], "Other");
+    assert_eq!(
+        other["_meta"][CUSTOM_ANSWER_MARKER],
+        serde_json::json!({ "questionId": ASK_FIELD, "isCustomAnswer": true })
+    );
+    assert!(
+        schema.required.unwrap_or_default().is_empty(),
+        "the select or the typed answer, neither required alone"
+    );
+}
+
+#[test]
+fn a_multi_select_question_is_a_titled_array() {
+    let schema = question_form_schema(&report_question(true, false));
+    let wire = serde_json::to_value(&schema).expect("the schema serializes");
+
+    let answer = &wire["properties"][ASK_FIELD];
+    assert_eq!(answer["type"], "array");
+    assert_eq!(answer["items"]["anyOf"][2]["const"], "Summary");
+    assert!(wire["properties"].get(ASK_OTHER_FIELD).is_none());
+    assert_eq!(
+        schema.required.as_deref(),
+        Some(&[ASK_FIELD.to_owned()][..])
+    );
+}
+
+#[test]
+fn reads_single_multi_and_typed_answers() {
+    let single = report_question(false, true);
+    assert_eq!(
+        read_question_answer(&single, Some(&accepted(vec![(ASK_FIELD, "Tables".into())]))),
+        Ok(UserInputAnswer::option("Tables"))
+    );
+    // The typed answer wins over a stale choice sent alongside it.
+    assert_eq!(
+        read_question_answer(
+            &single,
+            Some(&accepted(vec![
+                (ASK_FIELD, "Tables".into()),
+                (ASK_OTHER_FIELD, "  A one-pager  ".into()),
+            ]))
+        ),
+        Ok(UserInputAnswer::text("A one-pager"))
+    );
+
+    let multi = report_question(true, true);
+    assert_eq!(
+        read_question_answer(
+            &multi,
+            Some(&accepted(vec![(
+                ASK_FIELD,
+                ElicitationContentValue::StringArray(vec![
+                    "Summary".to_owned(),
+                    "Charts".to_owned(),
+                ]),
+            )]))
+        ),
+        Ok(UserInputAnswer {
+            selected: vec!["Charts".to_owned(), "Summary".to_owned()],
+            other: None,
+        }),
+        "in the order offered"
+    );
+}
+
+#[test]
+fn rejects_answers_that_do_not_fit_the_question() {
+    let single = report_question(false, false);
+    assert!(matches!(
+        read_question_answer(&single, Some(&accepted(vec![(ASK_FIELD, "Maps".into())]))),
+        Err(UserInputError::InvalidAnswer(message)) if message.contains("not one of the offered options")
+    ));
+    assert_eq!(
+        read_question_answer(
+            &single,
+            Some(&accepted(vec![(ASK_OTHER_FIELD, "Maps".into())]))
+        ),
+        Err(UserInputError::MissingAnswer),
+        "no Other was offered, so a typed answer is not read"
+    );
+    let multi = report_question(true, false);
+    assert!(matches!(
+        read_question_answer(&multi, Some(&accepted(vec![(ASK_FIELD, "Charts".into())]))),
+        Err(UserInputError::InvalidAnswer(_))
+    ));
+    assert_eq!(
+        read_question_answer(
+            &multi,
+            Some(&accepted(vec![(
+                ASK_FIELD,
+                ElicitationContentValue::StringArray(Vec::new())
+            )]))
+        ),
+        Err(UserInputError::MissingAnswer)
+    );
 }

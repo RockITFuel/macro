@@ -188,6 +188,9 @@ pub struct ElicitationOption {
     pub title: Option<String>,
     /// Help text, when the agent gave one.
     pub description: Option<String>,
+    /// A plain-text sketch to show in a monospace box while the option is
+    /// chosen, from the option's `_meta.macro.preview` (Macro's `AskUser`).
+    pub preview: Option<String>,
 }
 
 /// One property's answer, resolved against the schema that asked for it.

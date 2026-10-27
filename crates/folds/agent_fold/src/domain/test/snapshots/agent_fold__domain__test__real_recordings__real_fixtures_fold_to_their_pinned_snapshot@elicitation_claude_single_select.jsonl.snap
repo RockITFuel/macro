@@ -76,6 +76,7 @@ input_file: crates/folds/agent_fold/fixtures/real/elicitation_claude_single_sele
                                                 description: Some(
                                                     "Red",
                                                 ),
+                                                preview: None,
                                             },
                                             ElicitationOption {
                                                 value: "Blue",
@@ -85,6 +86,7 @@ input_file: crates/folds/agent_fold/fixtures/real/elicitation_claude_single_sele
                                                 description: Some(
                                                     "Blue",
                                                 ),
+                                                preview: None,
                                             },
                                             ElicitationOption {
                                                 value: "Green",
@@ -94,6 +96,7 @@ input_file: crates/folds/agent_fold/fixtures/real/elicitation_claude_single_sele
                                                 description: Some(
                                                     "Green",
                                                 ),
+                                                preview: None,
                                             },
                                         ],
                                         custom_field: Some(

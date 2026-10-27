@@ -9,6 +9,9 @@
  * the session. The rows keep their ARIA roles (`radio`, `checkbox`); a radio
  * group keeps one tab stop and moves its choice with the arrow keys, as the
  * native control does.
+ *
+ * An option may carry a preview sketch (Macro's `AskUser`), shown in a
+ * monospace box under the choices for the option being looked at.
  */
 
 import CheckIcon from '@icon/system/regular/check.svg';
@@ -19,7 +22,7 @@ import type {
   ElicitationSchema,
 } from '@service-agent-fold/generated/types';
 import { cn } from '@ui';
-import { For, type JSX, Show } from 'solid-js';
+import { createSignal, For, type JSX, Show } from 'solid-js';
 import { match, P } from 'ts-pattern';
 import type {
   FieldValue,
@@ -106,6 +109,8 @@ function ChoiceRow(props: {
   /** A radio group's one tab stop is its chosen (or first) row. */
   tabIndex?: number;
   onSelect: () => void;
+  /** The pointer or focus is on this row, so its preview shows. */
+  onPreview?: () => void;
   option: ElicitationOption;
 }) {
   return (
@@ -114,6 +119,8 @@ function ChoiceRow(props: {
       role={props.role}
       aria-checked={props.checked}
       tabIndex={props.tabIndex}
+      onPointerEnter={() => props.onPreview?.()}
+      onFocus={() => props.onPreview?.()}
       class="group flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-ink outline-none not-disabled:hover:bg-ink/5 focus-visible:bg-ink/5 disabled:opacity-50"
       disabled={props.disabled}
       onClick={props.onSelect}
@@ -173,6 +180,39 @@ function OtherRow(props: {
 }
 
 /**
+ * The sketch an option carries (a layout, a snippet, a table), shown under
+ * the choices for the option being looked at: the one under the pointer or
+ * focus, else the chosen one. Monospace and preformatted, as the agent drew
+ * it; long sketches scroll inside the box.
+ */
+function OptionPreview(props: {
+  options: ElicitationOption[];
+  /** The value whose preview shows, when it has one. */
+  value: string | undefined;
+}) {
+  const option = () =>
+    props.options.find((option) => option.value === props.value);
+  return (
+    <Show when={option()?.preview}>
+      {(preview) => (
+        <pre
+          data-option-preview
+          aria-label={`Preview of ${option()?.title ?? option()?.value}`}
+          class="mt-1 max-h-64 overflow-auto rounded-md border border-edge-muted bg-surface px-3 py-2 font-mono text-xs leading-5 text-ink-muted whitespace-pre"
+        >
+          {preview()}
+        </pre>
+      )}
+    </Show>
+  );
+}
+
+/** Whether any of a select's options carries a preview. */
+function hasPreviews(options: ElicitationOption[]): boolean {
+  return options.some((option) => option.preview);
+}
+
+/**
  * One answer from several, with the keyboard behavior of a native radio
  * group: one tab stop (the chosen row, or the first), and the arrow keys
  * move the choice - onto the Other row too, when there is one.
@@ -185,6 +225,7 @@ function SingleChoice(props: {
   onChange: (next: FieldValue) => void;
 }) {
   let group: HTMLDivElement | undefined;
+  const [looking, setLooking] = createSignal<string>();
   const selection = (): SingleSelection =>
     props.value?.kind === 'single_select'
       ? props.value.selection
@@ -198,6 +239,10 @@ function SingleChoice(props: {
   const customText = () => {
     const current = selection();
     return current.kind === 'custom' ? current.text : '';
+  };
+  const chosenValue = () => {
+    const current = selection();
+    return current.kind === 'option' ? current.value : undefined;
   };
   // The rows in order, Other last; the tab stop is the chosen one, else the
   // first.
@@ -244,6 +289,7 @@ function SingleChoice(props: {
       aria-labelledby={props.labelId}
       class="flex flex-col"
       onKeyDown={onKeyDown}
+      onPointerLeave={() => setLooking(undefined)}
     >
       <For each={props.field.options}>
         {(option, index) => (
@@ -254,6 +300,7 @@ function SingleChoice(props: {
             disabled={props.disabled}
             tabIndex={tabIndex(index())}
             onSelect={() => pick({ kind: 'option', value: option.value })}
+            onPreview={() => setLooking(option.value)}
           />
         )}
       </For>
@@ -269,6 +316,12 @@ function SingleChoice(props: {
               pick({ kind: 'custom', text: '' });
           }}
           onInput={(text) => pick({ kind: 'custom', text })}
+        />
+      </Show>
+      <Show when={hasPreviews(props.field.options)}>
+        <OptionPreview
+          options={props.field.options}
+          value={looking() ?? chosenValue()}
         />
       </Show>
     </div>
@@ -299,9 +352,15 @@ function MultiChoice(props: {
     });
   };
   const custom = () => current().custom;
+  const [looking, setLooking] = createSignal<string>();
 
   return (
-    <div role="group" aria-labelledby={props.labelId} class="flex flex-col">
+    <div
+      role="group"
+      aria-labelledby={props.labelId}
+      class="flex flex-col"
+      onPointerLeave={() => setLooking(undefined)}
+    >
       <For each={props.field.options}>
         {(option) => (
           <ChoiceRow
@@ -309,7 +368,11 @@ function MultiChoice(props: {
             option={option}
             checked={current().values.includes(option.value)}
             disabled={props.disabled}
-            onSelect={() => toggle(option)}
+            onSelect={() => {
+              setLooking(option.value);
+              toggle(option);
+            }}
+            onPreview={() => setLooking(option.value)}
           />
         )}
       </For>
@@ -331,6 +394,12 @@ function MultiChoice(props: {
           }
         />
       </Show>
+      <Show when={hasPreviews(props.field.options)}>
+        <OptionPreview
+          options={props.field.options}
+          value={looking() ?? current().values.at(-1)}
+        />
+      </Show>
     </div>
   );
 }
@@ -339,6 +408,7 @@ const YES: ElicitationOption = {
   value: 'true',
   title: 'Yes',
   description: null,
+  preview: null,
 };
 
 function FieldControl(props: {
