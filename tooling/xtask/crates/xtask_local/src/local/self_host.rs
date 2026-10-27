@@ -263,6 +263,15 @@ pub fn check(env: &BTreeMap<String, String>, fixtures: &BTreeMap<String, String>
     if !self_host.is_public() {
         return Ok(());
     }
+    if env
+        .get("DEV_DANGEROUS_LOCAL_CONTAINERS")
+        .is_some_and(|value| value == "true")
+    {
+        bail!(
+            "{PUBLIC_ORIGIN} is set but DEV_DANGEROUS_LOCAL_CONTAINERS=true would hand the \
+             agent harness the host's Docker socket; remove it (Daytona runs sandboxes instead)"
+        );
+    }
     if smtp.is_none() || self_host.mail_from.is_none() {
         bail!(
             "{PUBLIC_ORIGIN} is set but mail would only reach the local Mailpit; \

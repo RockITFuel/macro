@@ -149,3 +149,39 @@ fn without_self_host_settings_the_override_is_unchanged() {
     apply_self_host(&mut value, &SelfHost::default());
     assert_eq!(value, before);
 }
+
+#[test]
+fn a_public_harness_gets_its_binaries_but_not_the_docker_socket() {
+    let mounts = vec![dct::Volumes::Simple("/srv/out:/app/out:ro".to_string())];
+    let compose = |self_host: &SelfHost| {
+        let mut services = IndexMap::new();
+        services.insert(
+            EGRESS_SERVICE.to_string(),
+            Some(dct::Service {
+                volumes: mounts.clone(),
+                ..Default::default()
+            }),
+        );
+        let mut value = serde_yaml::to_value(dct::Compose {
+            services: dct::Services(services),
+            ..Default::default()
+        })
+        .unwrap();
+        apply_self_host(&mut value, self_host);
+        value["services"][EGRESS_SERVICE]["volumes"].clone()
+    };
+
+    // Local: the override's mounts merge with the base's socket mount.
+    assert!(!matches!(compose(&SelfHost::default()), Value::Tagged(_)));
+    let Value::Tagged(volumes) = compose(&SelfHost {
+        public_origin: Some("https://macro.example.com".into()),
+        ..SelfHost::default()
+    }) else {
+        panic!("a public harness must replace the inherited mounts");
+    };
+    assert_eq!(volumes.tag, Tag::new("!override"));
+    assert_eq!(
+        volumes.value,
+        serde_yaml::to_value(vec!["/srv/out:/app/out:ro"]).unwrap()
+    );
+}

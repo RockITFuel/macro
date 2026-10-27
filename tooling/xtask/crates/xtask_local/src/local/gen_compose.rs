@@ -522,7 +522,8 @@ fn apply_tags(value: &mut Value, mode: Mode, instance: &Instance) {
 }
 
 /// Apply the [`SelfHost`] settings: bind every published port to its address,
-/// and hand the database containers the overridden passwords. The passwords
+/// drop the harness's Docker socket on a public stack, and hand the database
+/// containers the overridden passwords. The passwords
 /// are interpolated from the generated env (where [`SelfHost::write`] put
 /// them) rather than written here, so they stay out of the override file.
 /// Postgres only reads them when it initializes an empty volume.
@@ -545,6 +546,15 @@ fn apply_self_host(value: &mut Value, self_host: &SelfHost) {
                 }
             }
         }
+    }
+    // The base compose mounts the host's Docker socket into the harness for
+    // local sandboxes; a public stack runs none, so keep only the binaries.
+    if self_host.is_public()
+        && let Some(harness) = services
+            .get_mut(EGRESS_SERVICE)
+            .and_then(Value::as_mapping_mut)
+    {
+        override_in_place(harness, "volumes");
     }
     let mut set_env = |service: &str, pairs: &[(&str, &str)]| {
         let entry = services

@@ -109,3 +109,13 @@ fn smtp_settings_default_the_port_from_the_security() {
         assert!(SelfHost::from_env(&broken).smtp().is_err(), "{broken:?}");
     }
 }
+
+#[test]
+fn a_public_stack_refuses_local_containers() {
+    let public = env(&[
+        (PUBLIC_ORIGIN, "https://macro.example.com"),
+        ("DEV_DANGEROUS_LOCAL_CONTAINERS", "true"),
+    ]);
+    let error = check(&public, &BTreeMap::new()).unwrap_err().to_string();
+    assert!(error.contains("DEV_DANGEROUS_LOCAL_CONTAINERS"), "{error}");
+}

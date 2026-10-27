@@ -127,7 +127,11 @@ impl LocalEnv {
             storage: StorageEnv::local(),
             queues: QueueEnv::local(),
             mail: MailEnv::for_self_host(self_host)?,
-            agent_harness: AgentHarnessEnv::local(instance.project_name(), tunnels.egress),
+            agent_harness: AgentHarnessEnv::local(
+                instance.project_name(),
+                tunnels.egress,
+                !self_host.is_public(),
+            ),
             service_auth: ServiceAuthEnv::for_instance(name, self_host),
             fusionauth: FusionAuthEnv::for_instance(instance, self_host),
             boot_stubs: BootStubEnv {
@@ -558,11 +562,15 @@ struct AgentHarnessEnv {
     /// In-network and cleartext, which the proxy permits only locally:
     /// this hop never leaves the compose bridge.
     mcp_service_url: &'static str,
+    /// Run sandboxes on the host's Docker daemon. Off on a public stack: the
+    /// harness would hold the host's Docker socket, which is root on it.
+    local_containers: bool,
 }
 
 impl AgentHarnessEnv {
-    fn local(project_name: &str, egress_public_url: Option<&str>) -> Self {
+    fn local(project_name: &str, egress_public_url: Option<&str>, local_containers: bool) -> Self {
         AgentHarnessEnv {
+            local_containers,
             // bot_id::MACRO_CODER_BOT_ID, a first-party bot with no row.
             bot_id: "00000000-0000-0000-0000-00000000a9e7",
             snapshot: "macro-agent-harness",
@@ -589,7 +597,10 @@ impl AgentHarnessEnv {
         env.insert("HARNESS_BOT_ID".into(), self.bot_id.into());
         env.insert("DAYTONA_SNAPSHOT".into(), self.snapshot.into());
         env.insert("DAYTONA_API_KEY".into(), String::new());
-        env.insert("DEV_DANGEROUS_LOCAL_CONTAINERS".into(), "true".into());
+        env.insert(
+            "DEV_DANGEROUS_LOCAL_CONTAINERS".into(),
+            self.local_containers.to_string(),
+        );
         env.insert("LOCAL_CONTAINER_IMAGE".into(), self.image.into());
         env.insert("LOCAL_CONTAINER_NETWORK".into(), self.network.clone());
         env.insert(
