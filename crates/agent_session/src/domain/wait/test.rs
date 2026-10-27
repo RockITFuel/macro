@@ -49,11 +49,13 @@ fn ask_user_question() -> PendingInteraction {
                                 value: "main".to_owned(),
                                 title: None,
                                 description: None,
+                                preview: None,
                             },
                             ElicitationOption {
                                 value: "self-host".to_owned(),
                                 title: Some("Self-host".to_owned()),
                                 description: None,
+                                preview: None,
                             },
                         ],
                         custom_field: None,
