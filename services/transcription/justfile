@@ -23,3 +23,8 @@ status:
 # Install Python dependencies
 install:
     pip install -r requirements.txt
+
+# Run the transcriber and local STT tests
+test:
+    python -m unittest discover -s tests -t .
+    python -m unittest test_transcriber

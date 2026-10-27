@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.macro.local-stt-worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>set -a; . "@HOME@/env"; exec "@HOME@/venv/bin/python" -m local_stt worker</string>
+  </array>
+  <key>WorkingDirectory</key><string>@HOME@</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LOCAL_STT_WORKER_ID</key><string>macbook-pro-m5</string>
+    <key>LOCAL_STT_MACHINE</key><string>macbook-pro-m5</string>
+    <key>LOCAL_STT_ENGINE</key><string>parakeet-mlx</string>
+    <key>LOCAL_STT_MAX_CONCURRENCY</key><string>1</string>
+    <key>LOCAL_STT_PRIORITIES</key><string>live,recent,backlog</string>
+    <key>LOCAL_STT_TIER</key><string>0</string>
+    <key>LOCAL_STT_MAX_CPU_LOAD</key><string>1.5</string>
+    <key>LOCAL_STT_DOWNLOAD_DIR</key><string>@HOME@/work</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Standard</string>
+  <key>StandardOutPath</key><string>@HOME@/logs/worker.log</string>
+  <key>StandardErrorPath</key><string>@HOME@/logs/worker.log</string>
+</dict>
+</plist>

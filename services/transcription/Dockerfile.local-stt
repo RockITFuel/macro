@@ -1,0 +1,28 @@
+# Local speech-to-text images (see LOCAL_STT.md):
+#   --target hub     dispatcher + dictation gateway, next to Redis (Warsaw)
+#   --target worker  CPU worker with Parakeet via onnx-asr (luka-mini, Warsaw)
+# The model downloads on first start into /models (mount a volume).
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}-slim AS base
+ENV PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_CACHE_DIR=1
+WORKDIR /app
+RUN adduser --disabled-password --gecos "" --home /app --uid 10001 appuser
+
+FROM base AS hub
+COPY requirements-local-stt.txt ./
+RUN pip install -r requirements-local-stt.txt
+COPY local_stt ./local_stt
+USER appuser
+EXPOSE 8790
+CMD ["python", "-m", "local_stt", "hub"]
+
+FROM base AS worker
+COPY requirements-local-stt.txt requirements-local-stt-cpu.txt ./
+RUN pip install -r requirements-local-stt-cpu.txt
+COPY local_stt ./local_stt
+RUN mkdir -p /models /work && chown appuser /models /work
+ENV LOCAL_STT_PARAKEET_DIR=/models/parakeet-tdt-0.6b-v3-onnx \
+    LOCAL_STT_DOWNLOAD_DIR=/work \
+    HF_HOME=/models/hf
+USER appuser
+CMD ["python", "-m", "local_stt", "worker"]

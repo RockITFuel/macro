@@ -1,0 +1,5 @@
+# Apple Silicon worker: Parakeet TDT 0.6B v3 on MLX. onnx-asr only provides
+# the Silero voice detector that splits long recordings.
+-r requirements-local-stt.txt
+parakeet-mlx==0.5.3
+onnx-asr[cpu,hub]==0.12.0

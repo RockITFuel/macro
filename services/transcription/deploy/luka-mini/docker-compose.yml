@@ -1,0 +1,26 @@
+# CPU worker on luka-mini. Env in .env next to this file (0600):
+#   LOCAL_STT_REDIS_PASSWORD=...   (same as on Warsaw)
+name: macro-stt-worker
+services:
+  worker:
+    image: ${LOCAL_STT_IMAGE_WORKER:-youriheuvel/macro-local-stt-worker:latest}
+    container_name: macro-stt-worker
+    restart: unless-stopped
+    # Dev box: stay out of the way of builds. Parakeet needs ~3.7 GB per
+    # loaded model and runs ~30x real time on 4-8 threads.
+    cpus: 8
+    mem_limit: 8g
+    environment:
+      MACRO_LOCAL_STT_REDIS_URL: redis://:${LOCAL_STT_REDIS_PASSWORD:?set in .env}@100.81.201.84:6385/0
+      LOCAL_STT_WORKER_ID: luka-mini
+      LOCAL_STT_MACHINE: luka-mini
+      LOCAL_STT_THREADS: "4"
+      LOCAL_STT_MAX_CONCURRENCY: "2"
+      LOCAL_STT_PRIORITIES: live,recent,backlog
+      LOCAL_STT_TIER: "0"
+      # Load per core above which it takes nothing new; builds push it past 1.
+      LOCAL_STT_MAX_CPU_LOAD: "3.0"
+    volumes:
+      - models:/models
+volumes:
+  models:

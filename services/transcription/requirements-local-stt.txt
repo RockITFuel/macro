@@ -1,0 +1,9 @@
+# Local speech-to-text hub and workers (local_stt). The LiveKit agent itself
+# only needs `redis` from this list (see requirements.txt).
+redis>=5.2
+numpy
+aiohttp>=3.10
+httpx
+psutil
+av>=13            # PyAV: decodes webm/mp4/ogg with its bundled FFmpeg
+huggingface-hub
