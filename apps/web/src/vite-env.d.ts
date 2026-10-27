@@ -13,6 +13,8 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_BROWSER_OTEL?: string;
   /** `true` logs each `perfMark` as a `[perf]` console line. */
   readonly VITE_PERF_LOG?: string;
+  /** `true` when the backend's FusionAuth has the `github` identity provider. */
+  readonly VITE_ENABLE_GITHUB_LOGIN?: string;
   readonly VITE_ENABLE_REMINDERS?: string;
   readonly VITE_ENABLE_CALENDAR_MEETING_NOTES?: string;
   readonly VITE_DISABLE_BROWSER_TURSO_CACHE?: string;

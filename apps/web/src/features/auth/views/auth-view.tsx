@@ -36,6 +36,8 @@ export type SignupJourneySlots = {
 export function AuthView(props: {
   intent: AuthIntent;
   showApple: boolean;
+  /** Offer GitHub sign-in; the build sets it when GitHub is configured. */
+  showGithub?: boolean;
   /** The header yields to the on-screen keyboard on phones. */
   compact: boolean;
   initialEmail?: string;
@@ -107,6 +109,7 @@ export function AuthView(props: {
             <Stepper.Step>
               <LoginPicker
                 showApple={props.showApple}
+                showGithub={props.showGithub ?? false}
                 onGoogle={() =>
                   fireAndForget(
                     context.startSso('google', props.intent),
@@ -115,6 +118,12 @@ export function AuthView(props: {
                 }
                 onApple={() =>
                   fireAndForget(context.startSso('apple', props.intent), 'auth')
+                }
+                onGithub={() =>
+                  fireAndForget(
+                    context.startSso('github', props.intent),
+                    'auth'
+                  )
                 }
                 onEmail={login.chooseEmail}
               />

@@ -14,6 +14,7 @@ afterEach(() => {
 function setup(
   options: {
     intent?: AuthIntent;
+    showGithub?: boolean;
     world?: Partial<FakeAuthWorld>;
     initialEmail?: string;
     autoStart?: boolean;
@@ -28,6 +29,7 @@ function setup(
       <AuthView
         intent={options.intent ?? 'login'}
         showApple={false}
+        showGithub={options.showGithub}
         compact={false}
         initialEmail={options.initialEmail}
         autoStart={options.autoStart}
@@ -271,6 +273,17 @@ describe('email sign-in', () => {
 });
 
 describe('single sign-on', () => {
+  it('offers GitHub only where it is configured', async () => {
+    setup();
+    expect(screen.queryByText('Continue with GitHub')).toBeNull();
+    cleanup();
+
+    const { fake } = setup({ intent: 'signup', showGithub: true });
+    click('Continue with GitHub');
+    await screen.findByTestId('signed-in');
+    expect(fake.calls()).toContain('sso:github:signup');
+  });
+
   it('starts Google with the page’s intent', async () => {
     const { fake } = setup({ intent: 'login' });
     click('Continue with Google');

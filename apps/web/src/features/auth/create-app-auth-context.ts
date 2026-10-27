@@ -12,13 +12,24 @@ import {
 } from '@queries/auth/user-info';
 import { queryReadyGate } from '@queries/gate';
 import { detect } from 'detect-browser';
-import type { AuthContext, AuthSession } from './context/auth-context';
+import type {
+  AuthContext,
+  AuthSession,
+  SsoProvider,
+} from './context/auth-context';
 import {
   exchangeSessionCode,
   sendEmailCode,
   verifyEmailCode,
 } from './queries/auth-requests';
 import { useSsoLogin } from './useSsoLogin';
+
+/** FusionAuth identity provider names, as the kickstart creates them. */
+const IDP_NAMES: Record<SsoProvider, string> = {
+  google: GOOGLE_GMAIL_IDP,
+  apple: 'Apple',
+  github: 'github',
+};
 
 /** Real auth service, analytics, and session refresh behind the auth contract. */
 export function createAppAuthContext(): AuthContext {
@@ -67,9 +78,7 @@ export function createAppAuthContext(): AuthContext {
   return {
     session,
     startSso: (provider, intent) =>
-      (intent === 'signup' ? signupSso : loginSso)(
-        provider === 'google' ? GOOGLE_GMAIL_IDP : 'Apple'
-      ),
+      (intent === 'signup' ? signupSso : loginSso)(IDP_NAMES[provider]),
     sendEmailCode,
     verifyEmailCode,
     redeemSessionToken: async (token) => {

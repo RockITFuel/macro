@@ -33,6 +33,7 @@ export function Login(props: { signupMode?: boolean }) {
       <AuthView
         intent={props.signupMode ? 'signup' : 'login'}
         showApple={getNativeMobilePlatform() === 'ios'}
+        showGithub={import.meta.env.VITE_ENABLE_GITHUB_LOGIN === 'true'}
         compact={virtualKeyboardVisible()}
         initialEmail={email}
         // Dev persona links (`?email=`) sign straight in against a local backend.
