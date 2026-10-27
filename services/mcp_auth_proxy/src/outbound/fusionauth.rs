@@ -4,6 +4,9 @@ use anyhow::Context;
 use std::sync::Arc;
 use tracing::Instrument;
 
+#[cfg(test)]
+mod test;
+
 use crate::domain::{
     models::{RefreshToken, UpstreamTokens},
     ports::{OAuthProvider, UpstreamTokensFuture},
@@ -13,18 +16,35 @@ use crate::domain::{
 #[derive(Clone)]
 pub struct FusionAuthOAuthProvider {
     client: Arc<fusionauth::FusionAuthClient>,
-    google_idp_id: String,
+    /// Absent when FusionAuth has no `google_gmail` provider, as on a local
+    /// or self-hosted stack without a Google client: MCP sign-in is then
+    /// refused while the rest of the service runs.
+    google_idp_id: Option<String>,
 }
 
 impl FusionAuthOAuthProvider {
     /// Creates a provider and resolves the Google identity provider ID.
     #[tracing::instrument(skip(client), err)]
     pub async fn new(client: fusionauth::FusionAuthClient) -> anyhow::Result<Self> {
-        let google_idp_id = client
+        let google_idp_id = match client
             .get_identity_provider_id_by_name("google_gmail")
             .await
-            .context("failed to look up Google Gmail identity provider in FusionAuth")?;
-        tracing::debug!(%google_idp_id, "resolved Google IDP ID from FusionAuth");
+        {
+            Ok(id) => {
+                tracing::debug!(google_idp_id = %id, "resolved Google IDP ID from FusionAuth");
+                Some(id)
+            }
+            Err(fusionauth::error::FusionAuthClientError::NoIdentityProviderFound) => {
+                tracing::warn!(
+                    "FusionAuth has no google_gmail identity provider; MCP OAuth sign-in is unavailable"
+                );
+                None
+            }
+            Err(error) => {
+                return Err(anyhow::Error::from(error))
+                    .context("failed to look up Google Gmail identity provider in FusionAuth");
+            }
+        };
 
         Ok(Self {
             client: Arc::new(client),
@@ -36,11 +56,11 @@ impl FusionAuthOAuthProvider {
 impl OAuthProvider for FusionAuthOAuthProvider {
     #[tracing::instrument(skip(self), err)]
     fn construct_authorize_url(&self, state: &str) -> anyhow::Result<String> {
-        self.client.construct_oauth2_authorize_url(
-            &self.google_idp_id,
-            None,
-            Some(state.to_owned()),
-        )
+        let google_idp_id = self.google_idp_id.as_deref().context(
+            "MCP OAuth sign-in needs FusionAuth's google_gmail identity provider (a Google client)",
+        )?;
+        self.client
+            .construct_oauth2_authorize_url(google_idp_id, None, Some(state.to_owned()))
     }
 
     fn exchange_authorization_code<'a>(&'a self, code: &'a str) -> UpstreamTokensFuture<'a> {
