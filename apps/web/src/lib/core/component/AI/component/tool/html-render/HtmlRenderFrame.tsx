@@ -59,6 +59,9 @@ function createHtmlRenderTheme(element: () => Element | undefined) {
   return theme;
 }
 
+/** How often a page that navigated its frame away is put back. */
+const MAX_RESTORES = 2;
+
 export function HtmlRenderFrame(props: {
   html: string;
   title: string;
@@ -71,15 +74,19 @@ export function HtmlRenderFrame(props: {
   const [contentHeight, setContentHeight] = createSignal<number>();
   // Bumped when the page navigated its frame away, to put the page back.
   const [generation, setGeneration] = createSignal(0);
+  // Set when the page keeps navigating away: it is removed rather than put
+  // back again, so it cannot reload itself (and send requests) in a loop.
+  const [stopped, setStopped] = createSignal(false);
   // The document is built from the first theme; later themes are posted in,
   // so a theme switch does not reload the page. A new object per generation
   // remounts the frame.
   const page = createMemo(
     on(
-      () => [props.html, generation(), theme() !== undefined] as const,
-      ([html, generation]) => {
+      () =>
+        [props.html, generation(), theme() !== undefined, stopped()] as const,
+      ([html, generation, , stopped]) => {
         const initial = theme();
-        return initial
+        return initial && !stopped
           ? { generation, srcdoc: buildHtmlRenderDocument(html, initial) }
           : undefined;
       }
@@ -125,6 +132,10 @@ export function HtmlRenderFrame(props: {
     if (loads > 1) {
       loads = 0;
       setContentHeight(undefined);
+      if (generation() >= MAX_RESTORES) {
+        setStopped(true);
+        return;
+      }
       setGeneration((value) => value + 1);
       return;
     }
@@ -141,6 +152,11 @@ export function HtmlRenderFrame(props: {
       style={{ height: `${height()}px` }}
       data-html-render
     >
+      <Show when={stopped()}>
+        <p class="py-2 text-xs text-ink-muted" role="status">
+          This page kept leaving its frame and was stopped.
+        </p>
+      </Show>
       <Show when={page()} keyed>
         {(current) => (
           <iframe
