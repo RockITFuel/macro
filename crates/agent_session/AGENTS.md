@@ -19,6 +19,11 @@ consumer talks to.
   same fold run server-side for the SDK and agents.
 - `src/domain/read.rs` and `src/inbound/toolset/read_agent_session.rs`: bounded,
   view-authorized conversation reads using the shared transcript fold.
+- `src/domain/wait.rs`, `src/inbound/toolset/wait_agent_session.rs` and
+  `src/inbound/axum_router/wait.rs`: `WaitAgentSession` and
+  `GET /{id}/wait` block until the current turn stops running. They wake on
+  the `agent_session_turn_state` NOTIFY (a trigger on `turn_state`), heard by
+  `src/outbound/turn_signals.rs`, and re-read the folded log.
 - `src/outbound/postgres.rs`: the session repository.
 - `src/outbound/broker_lifecycle_publisher.rs` /
   `broker_log_realtime.rs`: Kafka publication of lifecycle and log events.

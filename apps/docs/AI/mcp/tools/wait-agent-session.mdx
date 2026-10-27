@@ -1,0 +1,17 @@
+---
+title: WaitAgentSession
+description: >-
+  Wait until an agent session's current turn finishes, needs an answer or
+  approval, or fails, then return its status and latest messages.
+---
+
+# WaitAgentSession
+
+Wait until an agent session's current turn finishes, needs an answer or approval, or fails, then return its status and latest messages. Returns at once if the session is not running. status is running, idle, waiting, failed or disconnected; timedOut is true when the timeout passed with the turn still running, so call again to keep waiting. When status is waiting, pendingRequests holds the agent's question or approval request with its options; this tool cannot answer it. Messages are bounded like ReadAgentSession. Requires view access to the session.
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sessionId` | string | Yes | The agent session UUID from its mention, search result, or creation. |
+| `timeoutSeconds` | integer | No | Seconds to wait before returning with timedOut; default 120, at most 600. |
