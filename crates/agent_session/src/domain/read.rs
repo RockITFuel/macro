@@ -1,6 +1,6 @@
 //! Authorized conversation reads with bounded responses over the app's session fold.
 
-use agent_fold::domain::{fold::fold, model::FoldedMessage};
+use agent_fold::domain::{fold::FoldMachineImpl, model::FoldedMessage, ports::FoldMachine};
 use entity_access::domain::models::{EntityAccessReceipt, EntityType, ViewAccessLevel};
 use serde::Serialize;
 
@@ -16,6 +16,7 @@ const MAX_MESSAGE_CHARS: usize = 4_000;
 /// A readable session conversation, including tool activity and failures.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SessionConversation {
     /// Session identity.
@@ -45,6 +46,7 @@ pub struct SessionConversation {
 /// One folded prompt or reply.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SessionConversationMessage {
     /// Turn number; pass it back to read that turn specifically.
@@ -62,6 +64,7 @@ pub struct SessionConversationMessage {
 /// The two sides of a session conversation.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ai_tools", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SessionMessageRole {
     /// A user prompt.
@@ -91,20 +94,40 @@ impl<R: AgentSessionRepo + AgentSessionLogRepo> SessionReader<R> {
         access: EntityAccessReceipt<ViewAccessLevel>,
         turn: Option<u32>,
     ) -> Result<SessionConversation> {
-        if access.entity().entity_type != EntityType::AgentSession {
-            return Err(AgentSessionError::Forbidden);
-        }
-        let id = uuid::Uuid::parse_str(&access.entity().entity_id)
-            .map_err(|_| AgentSessionError::Forbidden)?;
-        let session_id = AgentSessionId::new_from_uuid(id);
+        let (session, fold) = self.fold(&access).await?;
+        Ok(conversation(&session, fold.into_messages(), turn))
+    }
+
+    /// The session named by a verified view-access capability, and its whole
+    /// effective history folded: messages plus live state such as the turn.
+    pub(super) async fn fold(
+        &self,
+        access: &EntityAccessReceipt<ViewAccessLevel>,
+    ) -> Result<(AgentSession, FoldMachineImpl)> {
+        let session_id = session_id(access)?;
         let session = self.repo.get(session_id).await?;
         let log = AgentSessionLogRepo::list_by_session(&self.repo, session_id).await?;
-        let messages = fold(log.into_iter().map(|entry| entry.entry));
-        Ok(conversation(&session, messages, turn))
+        let mut fold = FoldMachineImpl::new();
+        for entry in log {
+            let _ = fold.push(entry.entry);
+        }
+        Ok((session, fold))
     }
 }
 
-fn conversation(
+/// The agent session a view-access capability names, refusing any other entity.
+pub(super) fn session_id(
+    access: &EntityAccessReceipt<ViewAccessLevel>,
+) -> Result<AgentSessionId> {
+    if access.entity().entity_type != EntityType::AgentSession {
+        return Err(AgentSessionError::Forbidden);
+    }
+    let id = uuid::Uuid::parse_str(&access.entity().entity_id)
+        .map_err(|_| AgentSessionError::Forbidden)?;
+    Ok(AgentSessionId::new_from_uuid(id))
+}
+
+pub(super) fn conversation(
     session: &AgentSession,
     messages: Vec<FoldedMessage>,
     turn: Option<u32>,
