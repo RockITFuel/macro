@@ -127,7 +127,11 @@ const htmlContext = (html: string, title: string, height: number) => ({
   response: {
     id: 'fixture-call',
     name: 'RenderHtml' as const,
-    data: { documentId: '00000000-0000-4000-8000-000000000001', height },
+    data: {
+      documentId: '00000000-0000-4000-8000-000000000001',
+      projectId: '00000000-0000-4000-8000-000000000002',
+      height,
+    },
   },
   chat_id: 'fixture',
   message_id: 'fixture',
