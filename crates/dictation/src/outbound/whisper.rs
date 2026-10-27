@@ -23,6 +23,15 @@ env_vars! {
     pub struct OpenaiApiKey;
 }
 
+macro_env_var::maybe_env_vars! {
+    /// Base URL of an OpenAI-compatible transcription API to use instead of
+    /// OpenAI, e.g. the self-hosted local speech-to-text gateway
+    /// (`http://macro-stt-hub:8790/v1`). Unset: OpenAI.
+    pub struct DictationSttApiBase;
+    /// Bearer token for `DICTATION_STT_API_BASE`. Unset: `OPENAI_API_KEY`.
+    pub struct DictationSttApiKey;
+}
+
 const MODEL: &str = "whisper-1";
 /// Overall request deadline, including the SDK's retries.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
@@ -47,16 +56,47 @@ impl WhisperTranscriber {
         Self::with_api_base(api_key, None)
     }
 
+    /// Construct from the environment: OpenAI, or the OpenAI-compatible API
+    /// at `DICTATION_STT_API_BASE` when it is set.
+    pub fn from_env(api_key: &OpenaiApiKey) -> Result<Self, WhisperConfigError> {
+        Self::with_override(
+            api_key,
+            DictationSttApiBase::new().as_ref().and_then(|v| v.value()),
+            DictationSttApiKey::new().as_ref().and_then(|v| v.value()),
+        )
+    }
+
+    /// Use `api_base` (with `override_key`, else the OpenAI key) when given.
+    pub fn with_override(
+        api_key: &OpenaiApiKey,
+        api_base: Option<&str>,
+        override_key: Option<&str>,
+    ) -> Result<Self, WhisperConfigError> {
+        let base = api_base.map(str::trim).filter(|base| !base.is_empty());
+        let key = match (base, override_key) {
+            (Some(_), Some(key)) => key,
+            _ => api_key.as_ref(),
+        };
+        if base.is_some() {
+            tracing::info!("dictation uses the OpenAI-compatible API at DICTATION_STT_API_BASE");
+        }
+        Self::build(key, base)
+    }
+
     /// Construct against a custom API base, e.g. a test server.
     pub fn with_api_base(
         api_key: &OpenaiApiKey,
         api_base: Option<&str>,
     ) -> Result<Self, WhisperConfigError> {
+        Self::build(api_key.as_ref(), api_base)
+    }
+
+    fn build(api_key: &str, api_base: Option<&str>) -> Result<Self, WhisperConfigError> {
         if api_key.trim().is_empty() {
             return Err(WhisperConfigError::EmptyApiKey);
         }
         let config = OpenAIConfig::new()
-            .with_api_key(api_key.as_ref())
+            .with_api_key(api_key)
             .with_api_base(api_base.unwrap_or("https://api.openai.com/v1"));
         let http_client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)

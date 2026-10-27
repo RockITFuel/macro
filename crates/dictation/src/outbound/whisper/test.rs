@@ -103,3 +103,62 @@ async fn maps_provider_rejections_to_a_content_free_error() {
 
     assert_eq!(error, DictationError::Provider);
 }
+
+async fn mount_transcription(server: &MockServer, bearer: &'static str) {
+    Mock::given(method("POST"))
+        .and(path("/v1/audio/transcriptions"))
+        .and(header("authorization", bearer))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "task": "transcribe",
+            "language": "nl",
+            "duration": 1.5,
+            "text": "Goedemorgen.",
+            "segments": []
+        })))
+        .expect(1)
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn override_base_uses_its_own_token() {
+    let server = MockServer::start().await;
+    mount_transcription(&server, "Bearer local-stt-token").await;
+    let api_key = OpenaiApiKey::new_testing("test-server-key");
+    let base = format!("{}/v1", server.uri());
+
+    let transcript =
+        WhisperTranscriber::with_override(&api_key, Some(&base), Some("local-stt-token"))
+            .unwrap()
+            .transcribe(recording())
+            .await
+            .unwrap();
+
+    assert_eq!(transcript.text, "Goedemorgen.");
+    assert_eq!(transcript.duration_seconds, 1.5);
+}
+
+#[tokio::test]
+async fn override_base_without_token_falls_back_to_the_openai_key() {
+    let server = MockServer::start().await;
+    mount_transcription(&server, "Bearer test-server-key").await;
+    let api_key = OpenaiApiKey::new_testing("test-server-key");
+    let base = format!("{}/v1", server.uri());
+
+    let transcript = WhisperTranscriber::with_override(&api_key, Some(&base), None)
+        .unwrap()
+        .transcribe(recording())
+        .await
+        .unwrap();
+
+    assert_eq!(transcript.text, "Goedemorgen.");
+}
+
+#[test]
+fn override_rejects_an_empty_token() {
+    let api_key = OpenaiApiKey::new_testing("test-server-key");
+    assert!(matches!(
+        WhisperTranscriber::with_override(&api_key, Some("http://stt/v1"), Some(" ")),
+        Err(WhisperConfigError::EmptyApiKey)
+    ));
+}
