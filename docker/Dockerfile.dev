@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=shared \
         --bin agent_harness_service \
         --bin calendar_service \
         --bin seed_cli \
-    && cargo build -j "${jobs}" -p search_processing_service --no-default-features \
+    && cargo build -j "${jobs}" -p search_processing_service --no-default-features --features processing,service \
         --bin search_processing_service \
     && mkdir -p /app/out \
     && cp /app/target/debug/authentication_service /app/out/ \
