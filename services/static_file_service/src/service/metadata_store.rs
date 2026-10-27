@@ -13,6 +13,30 @@ macro_env_var::maybe_env_vars! {
     struct DatabaseUrl;
 }
 
+/// Mark `metadata` uploaded once its object exists.
+///
+/// Object storage notifies the service of uploads where it can (S3 with an
+/// SQS notification). Where it cannot - R2, or LocalStack without that
+/// notification - nothing else would ever flip the flag, so a read that finds
+/// a file not yet uploaded checks the object itself (`object_exists`, given
+/// the object key) and records what it finds.
+pub async fn confirm_uploaded<F, Fut>(
+    metadata: &mut MetadataObject,
+    store: &MetadataStore,
+    object_exists: F,
+) -> Result<()>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<bool>>,
+{
+    if metadata.is_uploaded || !object_exists(metadata.s3_key.clone()).await? {
+        return Ok(());
+    }
+    store.mark_uploaded(&metadata.file_id).await?;
+    metadata.is_uploaded = true;
+    Ok(())
+}
+
 /// The metadata store the service runs on.
 #[derive(Debug, Clone)]
 pub enum MetadataStore {

@@ -44,6 +44,29 @@ impl S3Client {
         Ok(())
     }
 
+    /// Whether an object exists under `key`.
+    #[tracing::instrument(skip(self), err)]
+    pub async fn object_exists(&self, key: &str) -> Result<bool> {
+        match self
+            .inner
+            .head_object()
+            .bucket(&self.storage_bucket)
+            .key(key)
+            .send()
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(error)
+                if error
+                    .as_service_error()
+                    .is_some_and(|error| error.is_not_found()) =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error).context("failed to check object"),
+        }
+    }
+
     #[tracing::instrument(skip(self))]
     pub async fn get_presigned_url(&self, key: String) -> Result<String> {
         let presigned_url = self

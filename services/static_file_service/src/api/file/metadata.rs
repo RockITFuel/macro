@@ -26,24 +26,31 @@ pub struct Params {
     )
 )]
 #[tracing::instrument(
-    skip(metadata_client, user),
+    skip(metadata_client, storage_client, user),
     fields(actor = %user.acting_entity())
 )]
 pub async fn handle_get_metadata(
     State(metadata_client): State<MetadataStore>,
+    State(storage_client): State<std::sync::Arc<crate::service::s3::client::S3Client>>,
     user: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     Path(Params { file_id }): Path<Params>,
 ) -> Result<Response, Response> {
-    metadata_client
+    let internal_error = |err: anyhow::Error| {
+        tracing::error!(error=?err, "error getting metadata");
+        (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response()
+    };
+    let mut metadata = metadata_client
         .get_metadata(file_id.as_str())
         .await
-        .map_err(|err| {
-            tracing::error!(error=?err, "error getting metadata");
-            (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response()
-        })?
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "could not find metadata by id").into_response())
-        .map(|metadata| {
-            let response = GetFileMetadataResponse::from(metadata);
-            (StatusCode::OK, Json(response)).into_response()
-        })
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "could not find metadata by id").into_response())?;
+    crate::service::metadata_store::confirm_uploaded(
+        &mut metadata,
+        &metadata_client,
+        |key| async move { storage_client.object_exists(&key).await },
+    )
+    .await
+    .map_err(internal_error)?;
+    let response = GetFileMetadataResponse::from(metadata);
+    Ok((StatusCode::OK, Json(response)).into_response())
 }

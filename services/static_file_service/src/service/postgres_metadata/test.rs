@@ -58,3 +58,33 @@ async fn metadata_round_trips_and_follows_the_dynamodb_semantics(pool: PgPool) -
     );
     Ok(())
 }
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn a_read_marks_a_file_uploaded_once_its_object_exists(pool: PgPool) -> Result<()> {
+    use crate::service::metadata_store::{MetadataStore, confirm_uploaded};
+    let store = MetadataStore::Postgres(PgMetadataStore::new(pool));
+    store.put_metadata(metadata("a")).await?;
+
+    let mut missing = store.get_metadata("a").await?.expect("stored");
+    confirm_uploaded(&mut missing, &store, |_| async { Ok(false) }).await?;
+    assert!(!missing.is_uploaded);
+    assert!(!store.get_metadata("a").await?.expect("stored").is_uploaded);
+
+    let mut present = store.get_metadata("a").await?.expect("stored");
+    let mut checked = None;
+    confirm_uploaded(&mut present, &store, |key| {
+        checked = Some(key);
+        async { Ok(true) }
+    })
+    .await?;
+    assert_eq!(checked.as_deref(), Some("file/a"));
+    assert!(present.is_uploaded);
+    assert!(store.get_metadata("a").await?.expect("stored").is_uploaded);
+
+    // Once uploaded, reads no longer touch object storage.
+    confirm_uploaded(&mut present, &store, |_| async {
+        panic!("an uploaded file is not checked again")
+    })
+    .await?;
+    Ok(())
+}

@@ -46,6 +46,17 @@ pub async fn handle_get_presigned_url(
         })?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "file not found").into_response())?;
 
+    let mut metadata = metadata;
+    crate::service::metadata_store::confirm_uploaded(&mut metadata, &metadata_client, |key| {
+        let storage = &storage_client;
+        async move { storage.object_exists(&key).await }
+    })
+    .await
+    .map_err(|err| {
+        tracing::error!(error=?err, "error confirming upload");
+        (StatusCode::INTERNAL_SERVER_ERROR, "internal server error").into_response()
+    })?;
+
     // Check if file is uploaded
     if !metadata.is_uploaded {
         return Err((StatusCode::NOT_FOUND, "file not yet uploaded").into_response());
