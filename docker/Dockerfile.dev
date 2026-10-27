@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1
+# search_processing_service is built without its default `pdf` feature, as the
+# local stack does (inventory.rs): that feature needs ./pdfium-lib at runtime.
 FROM denoland/deno:2.9.6 AS deno
 FROM rust:latest AS chef
 # librdkafka (rdkafka-sys) builds with cmake, as in docker/Dockerfile.
@@ -32,8 +34,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=shared \
         --bin image_proxy_service \
         --bin agent_harness_service \
         --bin calendar_service \
-        --bin search_processing_service \
         --bin seed_cli \
+    && cargo build -j "${jobs}" -p search_processing_service --no-default-features \
+        --bin search_processing_service \
     && mkdir -p /app/out \
     && cp /app/target/debug/authentication_service /app/out/ \
     && cp /app/target/debug/connection_gateway_service /app/out/ \
