@@ -1,3 +1,4 @@
+import { BILLING_ENABLED } from '@core/constant/billing';
 import PlusIcon from '@icon/system/regular/plus.svg';
 import XIcon from '@icon/system/regular/x.svg';
 import { Index, type JSX, Show } from 'solid-js';
@@ -16,8 +17,11 @@ export function TeamSetup(props: { children: JSX.Element }) {
           Built for teams.
         </h1>
         <h2 class="mt-6 max-w-[440px] text-sm font-normal leading-6 text-ink-muted text-balance sm:text-[15px]">
-          Bring your team into one workspace. Choose Free or upgrade for more AI
-          and storage.
+          Bring your team into one workspace.
+          <Show when={BILLING_ENABLED}>
+            {' '}
+            Choose Free or upgrade for more AI and storage.
+          </Show>
         </h2>
       </header>
       <div class="mt-9 w-full">{props.children}</div>

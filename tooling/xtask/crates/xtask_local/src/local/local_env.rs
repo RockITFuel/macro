@@ -951,6 +951,8 @@ impl BootStubEnv {
             "local-google-generative-ai-key".into(),
         );
         env.insert("COHERE_API_KEY".into(), "local-cohere-key".into());
+        // The agent model router needs every provider's key to start a turn.
+        env.insert("CEREBRAS_API_KEY".into(), "local-cerebras-key".into());
         env.insert(
             "CAL_WEBHOOK_SECRET_KEY".into(),
             "local-cal-webhook-secret".into(),

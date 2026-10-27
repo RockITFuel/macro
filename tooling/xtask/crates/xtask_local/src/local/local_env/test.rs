@@ -85,6 +85,12 @@ fn emits_required_keys() {
         "PIPEDREAM_CLIENT_ID",
         "PIPEDREAM_CLIENT_SECRET",
         "PIPEDREAM_PROJECT_ID",
+        // The agent model router (`ModelRouter::try_from_env`) needs all of these.
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "CEREBRAS_API_KEY",
+        "FIREWORK_API_KEY",
+        "GOOGLE_GENERATIVE_AI_API_KEY",
         "ENVIRONMENT",
         "PORT",
         "FRONTEND_PORT",
