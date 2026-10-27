@@ -121,7 +121,8 @@ Restore a dump with `docker exec -i macro-prod-postgres-1 pg_restore -U user
 `macro-prod-db-1`, role `postgres`, database `fusionauth`). `start` re-creates
 LocalStack's queues, tables and buckets, which do not survive a restart: S3
 objects are lost with it until R2 is in, while stored credentials survive with
-`MACRO_LOCAL_ENCRYPTION_KEY`. `update` refuses an instance with data but no `stack.json` instead
+`MACRO_LOCAL_ENCRYPTION_KEY`. Static file metadata lives in Postgres on local
+AWS, so it survives too. `update` refuses an instance with data but no `stack.json` instead
 of bringing it up from scratch. Public stacks restart their containers by
 themselves (`unless-stopped`). Later commands reuse the `--port-base` recorded
 at `up`.

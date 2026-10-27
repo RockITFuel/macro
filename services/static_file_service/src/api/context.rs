@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::service::dynamodb::client::DynamodbClient;
+use crate::service::metadata_store::MetadataStore;
 use crate::service::s3::client::S3Client;
 use aws_sdk_sqs::Client;
 use axum::extract::FromRef;
@@ -14,7 +14,7 @@ pub(crate) type AuthorizationService = MacroAuthorizationServiceImpl<MacroAuthJw
 
 #[derive(Clone, FromRef)]
 pub struct AppState {
-    pub metadata_client: DynamodbClient,
+    pub metadata_client: MetadataStore,
     pub storage_client: Arc<S3Client>,
     pub sqs_client: Client,
     pub config: Arc<Config>,

@@ -1,9 +1,9 @@
 use super::message::*;
-use crate::service::dynamodb::client::DynamodbClient;
+use crate::service::metadata_store::MetadataStore;
 use anyhow::{Context, Result};
 
 #[tracing::instrument(skip(metadata_client))]
-pub async fn handle_s3_create(event: S3EventRecord, metadata_client: DynamodbClient) -> Result<()> {
+pub async fn handle_s3_create(event: S3EventRecord, metadata_client: MetadataStore) -> Result<()> {
     // Skip CloudFront image optimizer keys (e.g. "file/{uuid}/format=webp,width=300")
     if event.s3.object.key.matches('/').count() > 1 {
         return Ok(());

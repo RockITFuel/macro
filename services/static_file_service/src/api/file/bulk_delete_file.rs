@@ -1,6 +1,6 @@
 use crate::api::context::AuthorizationService;
 use crate::model::api::{BulkDeleteRequest, BulkDeleteResponse, DeleteResult};
-use crate::service::dynamodb::client::DynamodbClient;
+use crate::service::metadata_store::MetadataStore;
 use crate::service::s3::client::S3Client;
 use axum::Json;
 use axum::extract::State;
@@ -58,7 +58,7 @@ impl IntoResponse for BulkDeleteError {
     err
 )]
 pub async fn handle_bulk_delete_file(
-    State(metadata_client): State<DynamodbClient>,
+    State(metadata_client): State<MetadataStore>,
     State(storage_client): State<Arc<S3Client>>,
     user: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     Json(req): Json<BulkDeleteRequest>,

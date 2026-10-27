@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM static_file_metadata WHERE file_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "985dc2e6144c82dc6bb09814ae98d6ef1335e93010b9f71e8d0fcebc87779b7d"
+}

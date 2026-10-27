@@ -5,7 +5,7 @@ use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
 use std::sync::Arc;
 
 use crate::api::context::AuthorizationService;
-use crate::service::dynamodb::client::DynamodbClient;
+use crate::service::metadata_store::MetadataStore;
 use crate::service::s3::client::S3Client;
 
 #[derive(serde::Deserialize)]
@@ -31,7 +31,7 @@ pub struct Params {
     fields(actor = %user.acting_entity())
 )]
 pub async fn handle_get_presigned_url(
-    State(metadata_client): State<DynamodbClient>,
+    State(metadata_client): State<MetadataStore>,
     State(storage_client): State<Arc<S3Client>>,
     user: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     Path(Params { file_id }): Path<Params>,

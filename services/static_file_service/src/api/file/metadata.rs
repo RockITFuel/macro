@@ -1,6 +1,6 @@
 use crate::api::context::AuthorizationService;
 use crate::model::api::*;
-use crate::service::dynamodb::client::DynamodbClient;
+use crate::service::metadata_store::MetadataStore;
 use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -30,7 +30,7 @@ pub struct Params {
     fields(actor = %user.acting_entity())
 )]
 pub async fn handle_get_metadata(
-    State(metadata_client): State<DynamodbClient>,
+    State(metadata_client): State<MetadataStore>,
     user: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     Path(Params { file_id }): Path<Params>,
 ) -> Result<Response, Response> {

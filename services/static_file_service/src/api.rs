@@ -5,7 +5,7 @@ mod health;
 pub(crate) mod swagger;
 
 use super::config::Config;
-use super::service::dynamodb::client::DynamodbClient;
+use super::service::metadata_store::MetadataStore;
 use super::service::s3::client::S3Client;
 use crate::api::context::{AppState, AuthorizationService};
 use anyhow::Context;
@@ -32,13 +32,14 @@ pub async fn setup_and_serve(
 
     let aws_config = macro_aws_config::get_macro_aws_config().await;
 
-    let metadata_client = DynamodbClient::new(
+    let metadata_client = MetadataStore::from_env(
         &aws_config,
         config
             .static_file_service_dynamodb_table_name
             .as_ref()
             .to_owned(),
-    );
+    )
+    .await?;
 
     let sqs_client = aws_sdk_sqs::Client::new(&aws_config);
     let inner_client = macro_aws_config::s3_client().await;

@@ -1,11 +1,11 @@
 use super::message::{S3EventKind::*, *};
 use super::s3_create;
-use crate::service::dynamodb::client::DynamodbClient;
+use crate::service::metadata_store::MetadataStore;
 use aws_sdk_sqs::types::Message;
 use serde_json::from_str;
 
 #[tracing::instrument(skip(metadata_client))]
-pub async fn handle_s3_message(message: Message, metadata_client: DynamodbClient) -> Option<()> {
+pub async fn handle_s3_message(message: Message, metadata_client: MetadataStore) -> Option<()> {
     tracing::debug!("processing sqs message {:?}", message);
     if let Some(text) = message.body {
         let body: S3EventNotification = from_str(text.as_str())
@@ -23,7 +23,7 @@ pub async fn handle_s3_message(message: Message, metadata_client: DynamodbClient
 }
 
 #[tracing::instrument(skip(metadata_client))]
-async fn handle_s3_events(event: S3EventNotification, metadata_client: DynamodbClient) {
+async fn handle_s3_events(event: S3EventNotification, metadata_client: MetadataStore) {
     for event in event.records {
         match event.event_kind {
             ObjectCreatedAll

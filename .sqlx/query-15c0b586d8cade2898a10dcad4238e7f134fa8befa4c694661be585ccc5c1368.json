@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE static_file_metadata SET is_uploaded = true WHERE file_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "15c0b586d8cade2898a10dcad4238e7f134fa8befa4c694661be585ccc5c1368"
+}

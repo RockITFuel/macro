@@ -1,6 +1,6 @@
 use crate::api::context::AuthorizationService;
-use crate::service::dynamodb::client::DynamodbClient;
 use crate::service::dynamodb::model::DeleteError;
+use crate::service::metadata_store::MetadataStore;
 use crate::service::s3::client::S3Client;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -33,7 +33,7 @@ pub struct Params {
     fields(actor = %user.acting_entity())
 )]
 pub async fn handle_delete_file(
-    State(metadata_client): State<DynamodbClient>,
+    State(metadata_client): State<MetadataStore>,
     State(storage_client): State<Arc<S3Client>>,
     user: MacroAuthorizationExtractor<AuthorizationService, UserOrInternal>,
     Path(Params { file_id }): Path<Params>,
