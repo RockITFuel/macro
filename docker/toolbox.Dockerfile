@@ -20,11 +20,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=shared \
 
 FROM docker:28-cli AS docker
 
+# OpenSearch index bootstrap (infra/stacks/opensearch/helpers) runs on bun.
+FROM oven/bun:1.4-debian AS bun
+
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git openssh-client openssl bash procps hostname && \
   apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=builder /out/bin/ /usr/local/bin/
 ENTRYPOINT ["xtask_local"]
