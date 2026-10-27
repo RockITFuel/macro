@@ -231,7 +231,12 @@ pub async fn main() -> anyhow::Result<()> {
         voip_bundle_id: None,
     };
 
-    let ses_client = aws_sdk_sesv2::Client::new(&aws_config);
+    // SES, or SMTP when SMTP_HOST is set (a self-hosted instance's server).
+    let ses_client = ses_client::SesClient::from_env(
+        aws_sdk_sesv2::Client::new(&aws_config),
+        &config.environment.to_string(),
+    )
+    .context("invalid SMTP configuration")?;
     let email_adapter = EmailAdapter::new(ses_client, crate::env::SENDER_ADDRESS.clone());
 
     let redis_multiplexed_conn = redis_client

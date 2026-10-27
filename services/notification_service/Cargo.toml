@@ -64,6 +64,7 @@ models_pagination = { path = "../../crates/models_pagination", features = [
   "axum",
 ] }
 notification = { path = "../../crates/notification", features = ["axum"] }
+ses_client = { path = "../../crates/ses_client" }
 notification_db_client = { path = "../../crates/notification_db_client" }
 paste = { workspace = true }
 rate_limit = { path = "../../crates/rate_limit" }

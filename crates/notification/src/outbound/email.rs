@@ -83,6 +83,22 @@ impl EmailServiceOps for aws_sdk_sesv2::Client {
     }
 }
 
+/// SES, or SMTP when the environment configures it (see
+/// [`ses_client::SesClient::from_env`]).
+impl EmailServiceOps for ses_client::SesClient {
+    async fn send_email(
+        &self,
+        from_email: &str,
+        to_email: &str,
+        subject: &str,
+        html_body: &str,
+    ) -> Result<(), Report> {
+        ses_client::SesClient::send_email(self, from_email, to_email, subject, html_body)
+            .await
+            .map_err(|e| rootcause::report!("email send failed: {e:#}"))
+    }
+}
+
 impl<E: EmailServiceOps + Send + Sync + 'static> EmailSender for EmailAdapter<E> {
     async fn send_email(
         &self,
