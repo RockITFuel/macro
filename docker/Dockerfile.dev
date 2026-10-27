@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM denoland/deno:2.9.6 AS deno
 FROM rust:latest AS chef
+# librdkafka (rdkafka-sys) builds with cmake, as in docker/Dockerfile.
+RUN apt-get update && apt-get install -y --no-install-recommends cmake && \
+  apt-get clean && rm -rf /var/lib/apt/lists/*
 ENV SQLX_OFFLINE=true
 ENV CARGO_PROFILE_DEV_DEBUG=0
 WORKDIR /app
