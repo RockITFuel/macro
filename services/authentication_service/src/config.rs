@@ -200,6 +200,11 @@ pub struct Config {
     /// `DEVELOPMENT_SIGNUP_ALLOWLIST_JSON`. Production and Local ignore it.
     #[macro_config_default(false)]
     pub development_bypass_signup_allowlist: bool,
+    /// No billing on this instance (local and self-hosted stacks): every
+    /// account holds the top plan and nothing calls Stripe. See
+    /// [`crate::service::billing_disabled`].
+    #[macro_config_default(false)]
+    pub billing_disabled: bool,
     /// Stripe promotion code applied at checkout for accounts that signed up
     /// through a GTM invite link (optional, defaults to `1MF`).
     pub gtm_invite_promo_code: GtmInvitePromoCode,

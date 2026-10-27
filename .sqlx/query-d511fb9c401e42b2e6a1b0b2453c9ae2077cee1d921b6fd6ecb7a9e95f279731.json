@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO \"RolesOnUsers\" (\"userId\", \"roleId\")\n                SELECT u.id, r.role_id\n                FROM \"User\" u\n                CROSS JOIN unnest($1::text[]) AS r(role_id)\n                ON CONFLICT DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d511fb9c401e42b2e6a1b0b2453c9ae2077cee1d921b6fd6ecb7a9e95f279731"
+}

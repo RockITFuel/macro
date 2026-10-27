@@ -114,11 +114,18 @@ pub async fn handler(
             })?;
         }
         "user.create" => {
+            let email = req.event.user.email.to_lowercase();
             dispatch_user_create_webhook(&ctx.signup_policy, req, |req| {
                 create_user_webhook(&ctx, req)
             })
             .await
             .map_err(user_create_webhook_error_response)?;
+            if ctx.billing_disabled {
+                grant_top_plan(&ctx, &email).await.map_err(|e| {
+                    tracing::error!(error=?e, "unable to grant the top plan on user.create");
+                    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+                })?;
+            }
         }
         "user.email.verified" => {
             verify_user_email_webhook(&ctx, req).await.map_err(|e| {
@@ -138,6 +145,18 @@ pub async fn handler(
     );
 
     Ok(StatusCode::OK.into_response())
+}
+
+/// Billing is off: the new account holds the top plan from the start.
+async fn grant_top_plan(ctx: &ApiContext, email: &str) -> anyhow::Result<()> {
+    let user_id = format!("macro|{email}");
+    let user_id = MacroUserIdStr::parse_from_str(&user_id)?;
+    crate::service::billing_disabled::grant_to_user(
+        ctx.user_roles_and_permissions_service.as_ref(),
+        &user_id,
+    )
+    .await?;
+    Ok(())
 }
 
 enum UserCreateWebhookError {

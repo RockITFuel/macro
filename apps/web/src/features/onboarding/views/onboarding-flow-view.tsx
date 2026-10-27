@@ -1,3 +1,4 @@
+import { BILLING_ENABLED } from '@core/constant/billing';
 import { fireAndForget } from '@core/util/fireAndForget';
 import { createEffect, Match, onCleanup, Show, Switch } from 'solid-js';
 import { BypassButton } from '../components/bypass-button';
@@ -103,10 +104,11 @@ export function OnboardingFlowView(props: {
     if (finish.finishing()) return;
     const next = flow.leave(outcome);
     const viewer = context.viewer();
+    // A licensed viewer has nothing to pick; without billing nobody does.
     if (
       step() === 'team' &&
       viewer.t === 'signed-in' &&
-      viewer.viewer.licensed
+      (viewer.viewer.licensed || !BILLING_ENABLED)
     ) {
       fireAndForget(finish.finishPremium(), 'onboarding');
       return;

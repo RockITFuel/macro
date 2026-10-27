@@ -212,6 +212,9 @@ pub(crate) struct ApiContext {
     pub sqs_client: Arc<sqs_client::SQS>,
     pub environment: Environment,
     pub signup_policy: Arc<SignupPolicy>,
+    /// Every account holds the top plan; see [`crate::service::billing_disabled`].
+    #[from_ref(skip)]
+    pub billing_disabled: bool,
     pub jwt_args: JwtValidationArgs,
     pub authorization_state: MacroAuthorizationState<AuthorizationService>,
     pub token_context: MacroApiTokenContext,

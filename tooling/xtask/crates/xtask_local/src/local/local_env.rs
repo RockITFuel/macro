@@ -180,6 +180,10 @@ impl LocalEnv {
         // Calendar search ships dark too: off in deployed envs until each has
         // its calendar index created and backfilled.
         env.insert("CALENDAR_SEARCH_ENABLED".into(), "true".into());
+        // Local and self-hosted stacks have no Stripe: every account holds the
+        // top plan and the app shows no billing (the frontend build sets
+        // `VITE_DISABLE_BILLING`).
+        env.insert("BILLING_DISABLED".into(), "true".into());
         env.insert(
             "OVERRIDE_PREVIEW_GATEWAY_URL".into(),
             "http://agent-harness-service:8080/preview".into(),

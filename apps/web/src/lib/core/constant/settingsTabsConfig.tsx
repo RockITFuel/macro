@@ -1,4 +1,5 @@
 import { useFeatureFlag } from '@app/lib/analytics/posthog';
+import { BILLING_ENABLED } from '@core/constant/billing';
 import BellIcon from '@icon/system/regular/bell-simple.svg';
 import BugIcon from '@icon/system/regular/bug.svg';
 import BuildingsIcon from '@icon/system/regular/buildings.svg';
@@ -332,8 +333,9 @@ export const useSettingsTabAvailable = () => {
       case 'Account':
       case 'Notifications':
       case 'Usage':
-      case 'Billing':
         return true;
+      case 'Billing':
+        return BILLING_ENABLED;
       case 'Email':
         return ENABLE_EMAIL;
       case 'Calendar':

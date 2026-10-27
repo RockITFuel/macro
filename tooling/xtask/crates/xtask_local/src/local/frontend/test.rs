@@ -157,6 +157,7 @@ fn the_frontend_build_follows_github_and_a_prebuilt_bundle() {
     assert!(build.github_login);
     assert_eq!(build.prebuilt, Some(PathBuf::from("/srv/macro/frontend")));
     assert!(bundle_env(Mode::Local, true).contains(&("VITE_ENABLE_GITHUB_LOGIN", "true")));
+    assert!(bundle_env(Mode::Local, false).contains(&("VITE_DISABLE_BILLING", "true")));
     assert!(
         bundle_env(Mode::Local, false)
             .iter()

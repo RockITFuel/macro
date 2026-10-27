@@ -369,6 +369,11 @@ pub async fn run() -> anyhow::Result<()> {
 
     let user_roles_and_permissions_macro_db = MacroDB::new(db.clone());
 
+    if config.billing_disabled {
+        crate::service::billing_disabled::grant_to_all_users(&user_roles_and_permissions_macro_db)
+            .await
+            .context("granting every user the top plan (BILLING_DISABLED)")?;
+    }
     let user_roles_and_permissions_service = UserRolesAndPermissionsServiceImpl::new(
         user_roles_and_permissions_macro_db.clone(),
         user_roles_and_permissions_macro_db,
@@ -723,6 +728,7 @@ pub async fn run() -> anyhow::Result<()> {
             sqs_client,
             environment: config.environment,
             signup_policy,
+            billing_disabled: config.billing_disabled,
             rate_limit_service: rate_limit,
             calendar_scope_enabled: config.calendar_scope_enabled,
             account_link_state_key,

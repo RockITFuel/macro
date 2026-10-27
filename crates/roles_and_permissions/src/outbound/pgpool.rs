@@ -31,6 +31,31 @@ impl MacroDB {
         MacroDB { pool }
     }
 
+    /// Give every existing user `roles` (idempotent). Returns how many role
+    /// grants were added. For instances without billing, where every account
+    /// holds the top plan.
+    pub async fn add_roles_to_all_users(
+        &self,
+        roles: &[impl ToString],
+    ) -> Result<u64, UserRolesAndPermissionsError> {
+        let roles = roles.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+
+        let result = sqlx::query!(
+            r#"
+                INSERT INTO "RolesOnUsers" ("userId", "roleId")
+                SELECT u.id, r.role_id
+                FROM "User" u
+                CROSS JOIN unnest($1::text[]) AS r(role_id)
+                ON CONFLICT DO NOTHING
+            "#,
+            &roles
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
+
     /// Get the user id from the email
     async fn get_user_id_from_email<'a>(
         &self,

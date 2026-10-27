@@ -138,6 +138,8 @@ fn bundle_env(mode: Mode, github_login: bool) -> Vec<(&'static str, &'static str
     let mut env = Vec::new();
     if mode.spec().runs_local_infra {
         env.push(("VITE_AI_EDITING_WORKER_URL", "/ai-editing"));
+        // The services run with `BILLING_DISABLED` (see `LocalEnv`).
+        env.push(("VITE_DISABLE_BILLING", "true"));
     }
     if github_login {
         env.push(("VITE_ENABLE_GITHUB_LOGIN", "true"));
@@ -199,6 +201,11 @@ fn dev_env(instance: &Instance, mode: Mode, traces_enabled: bool) -> Result<Vec<
             instance.port(Port::Frontend).to_string(),
         ),
         ("VITE_LOCAL_SERVERS".to_string(), "ALL".to_string()),
+        // Local services run with `BILLING_DISABLED` (see `LocalEnv`).
+        (
+            "VITE_DISABLE_BILLING".to_string(),
+            mode.spec().runs_local_infra.to_string(),
+        ),
         ("MACRO_LOCAL_HOSTNAME".to_string(), super::tls::hostname()?),
         (
             "NODE_EXTRA_CA_CERTS".to_string(),

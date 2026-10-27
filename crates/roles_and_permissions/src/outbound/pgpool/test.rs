@@ -229,3 +229,30 @@ async fn test_get_user_roles_after_add_and_remove(pool: Pool<Postgres>) -> anyho
 
     Ok(())
 }
+
+#[sqlx::test(
+    migrator = "MACRO_DB_MIGRATIONS",
+    fixtures(path = "../../../fixtures", scripts("users"))
+)]
+async fn test_add_roles_to_all_users(pool: Pool<Postgres>) -> anyhow::Result<()> {
+    let macro_db = MacroDB::new(pool);
+    let roles = ["professional_subscriber", "sub_max"];
+
+    // user@ already holds professional_subscriber; the other three grants are new.
+    assert_eq!(macro_db.add_roles_to_all_users(&roles).await?, 3);
+    // Idempotent.
+    assert_eq!(macro_db.add_roles_to_all_users(&roles).await?, 0);
+
+    for user in ["macro|user@user.com", "macro|user2@user.com"] {
+        let permissions = macro_db
+            .get_user_permissions(&MacroUserIdStr::parse_from_str(user)?)
+            .await?
+            .into_iter()
+            .map(|p| p.id.to_string())
+            .collect::<Vec<String>>();
+        assert!(permissions.contains(&"read:professional_features".to_string()));
+        assert!(permissions.contains(&"write:proai".to_string()), "{user}");
+    }
+
+    Ok(())
+}

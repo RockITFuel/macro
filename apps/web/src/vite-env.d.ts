@@ -15,6 +15,8 @@ interface ImportMetaEnv {
   readonly VITE_PERF_LOG?: string;
   /** `true` when the backend's FusionAuth has the `github` identity provider. */
   readonly VITE_ENABLE_GITHUB_LOGIN?: string;
+  /** `true` on local and self-hosted stacks, which bill nobody. */
+  readonly VITE_DISABLE_BILLING?: string;
   readonly VITE_ENABLE_REMINDERS?: string;
   readonly VITE_ENABLE_CALENDAR_MEETING_NOTES?: string;
   readonly VITE_DISABLE_BROWSER_TURSO_CACHE?: string;

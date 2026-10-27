@@ -1,3 +1,4 @@
+import { BILLING_ENABLED } from '@core/constant/billing';
 import { createSignal } from 'solid-js';
 
 const DAILY_LIMIT = 5;
@@ -94,6 +95,8 @@ const [paywallKey, setPaywallKey] = createSignal<PaywallKey | null>(null);
 
 export const usePaywallState = () => {
   const showPaywall = (errorKey?: PaywallKey | null) => {
+    // Without billing every account already holds the top plan.
+    if (!BILLING_ENABLED) return;
     if (errorKey) {
       setPaywallKey(errorKey);
     }
