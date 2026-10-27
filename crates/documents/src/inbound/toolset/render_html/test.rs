@@ -2,6 +2,18 @@ use super::*;
 use crate::inbound::toolset::edit_document::test::{
     FakeDocumentService, FakeEditingWorker, request_context, tool_context,
 };
+use ai_toolset::ServiceContext;
+use model_owner::CreationPrincipal;
+
+/// A folder lookup a rejected page must never reach.
+struct NoFolder;
+
+#[async_trait]
+impl VisualsFolder for NoFolder {
+    async fn visuals_folder(&self, _principal: &CreationPrincipal) -> anyhow::Result<uuid::Uuid> {
+        panic!("a rejected page must not touch the Visuals folder");
+    }
+}
 
 fn page(title: &str, html: &str, height: u32) -> RenderHtml {
     RenderHtml {
@@ -56,10 +68,14 @@ async fn rejects_bad_pages_before_creating_a_document() {
         ),
     ] {
         // The shared fake panics if creation is reached.
-        let context = tool_context(
+        let ServiceContext(documents) = tool_context(
             FakeDocumentService::new("html"),
             FakeEditingWorker::default(),
         );
+        let context = ServiceContext(RenderHtmlContext {
+            documents,
+            folders: Arc::new(NoFolder),
+        });
         let error = call
             .call(context, request_context())
             .await

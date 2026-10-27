@@ -29,6 +29,7 @@ pub mod serde_utils;
 mod subagent;
 mod tool_context;
 pub mod user_tool_review;
+mod visuals_folder;
 
 pub use anthropic::toolset::AnthropicToolContext;
 use anthropic::toolset::anthropic_toolset;
@@ -321,7 +322,7 @@ fn tools_for_inner(host: AiHost, code_mode_direct: bool) -> ToolSetWithPrompt {
         // views; elsewhere it would only save a document nobody sees.
         AiHost::Chat | AiHost::AgentSession => toolset
             .add_tool::<DisplayResults, ToolServiceContext>()
-            .add_tool::<RenderHtml, ToolDocumentToolContext>(),
+            .add_tool::<RenderHtml, visuals_folder::ToolRenderHtmlContext>(),
         AiHost::ChannelBot | AiHost::Mcp => toolset,
     };
     // A direct upload needs a client that can PUT the bytes itself; in-app

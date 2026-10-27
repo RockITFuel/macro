@@ -215,14 +215,16 @@ permission failures should display a failed tool call without a successful resul
 `RenderHtml` (AI chat and agent sessions; not channel bots or MCP) takes a
 `title`, a self-contained `html` document of at most 256 KB and a frame
 `height` (80-2000 px). It saves the page as an HTML document in the user's
-files and shows it inline in the reply, outside tool groups, with the saved
+top-level `Visuals` folder (created on the first render, reused after) and
+shows it inline in the reply, outside tool groups, with the saved
 document under it to open or share. The frame fits a shorter page and scrolls a
 taller one. The page runs in `<iframe sandbox="allow-scripts" srcdoc>` (opaque
 origin: no Macro cookies, storage or APIs) behind a Content-Security-Policy
 that allows inline code and scripts from cdn.jsdelivr.net, unpkg.com and
 cdnjs.cloudflare.com, images and fonts only as `data:`/`blob:`, and no
 `fetch`, forms, frames or base URL. Clicked http(s) links open in a new tab;
-a page that navigates its frame is put back. The page follows the app theme
+a page that navigates its frame is put back (the navigation request itself can
+still leave the browser; accepted, since pages come from Macro's own agents). The page follows the app theme
 through Macro's design tokens as CSS variables (text, surfaces, borders,
 accent, status colors, the `--chart-1`..`--chart-9` series palette from
 `database-query/core/chart-palette.ts`, type sizes, radii and spacing), live

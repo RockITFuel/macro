@@ -1,5 +1,8 @@
 //! RenderHtml: show a self-contained HTML page inline in the conversation,
-//! saved as an HTML document so it survives reloads and can be shared.
+//! saved as an HTML document in the user's "Visuals" folder so it survives
+//! reloads and can be shared.
+
+use std::sync::Arc;
 
 use ai_toolset::{
     AsyncTool, RequestContext, ServiceContext, ToolAnnotated, ToolAnnotations, ToolCallError,
@@ -21,8 +24,38 @@ use crate::domain::ports::editing::EditingWorkerService;
 mod check;
 #[cfg(test)]
 mod test;
+pub mod visuals_folder;
 
 use check::page_warnings;
+use visuals_folder::VisualsFolder;
+
+/// What `RenderHtml` needs: the document tools' context to save the page,
+/// and the folder it is saved in.
+pub struct RenderHtmlContext<
+    DSvc: DocumentService + DocumentCreationService,
+    ESvc: EntityAccessService,
+    EDSvc: EditingWorkerService,
+> {
+    /// Creates the page's document.
+    pub documents: DocumentToolContext<DSvc, ESvc, EDSvc>,
+    /// Finds or creates the user's "Visuals" folder.
+    pub folders: Arc<dyn VisualsFolder>,
+}
+
+impl<DSvc, ESvc, EDSvc> Clone for RenderHtmlContext<DSvc, ESvc, EDSvc>
+where
+    DSvc: DocumentService + DocumentCreationService,
+    ESvc: EntityAccessService,
+    EDSvc: EditingWorkerService,
+    DocumentToolContext<DSvc, ESvc, EDSvc>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            documents: self.documents.clone(),
+            folders: Arc::clone(&self.folders),
+        }
+    }
+}
 
 /// Largest page, in bytes. The page travels in the tool call and stays in the
 /// transcript, so it is bounded well below what storage would take.
@@ -39,7 +72,7 @@ pub const MAX_HEIGHT: u32 = 2_000;
 #[serde(rename_all = "camelCase")]
 #[schemars(
     title = "RenderHtml",
-    description = "Show a finished, self-contained HTML page (chart, table, diagram, dashboard, mockup) inline in this conversation, above your reply, and save it as an HTML document the user can open and share. Call it before your final reply; the reply adds only what the page does not say. Read the Show Visuals skill before your first page. One document with inline <style> and <script>, run in a sandbox: no network requests, storage, forms or popups; scripts only from cdn.jsdelivr.net, unpkg.com or cdnjs.cloudflare.com; images as data: URLs or SVG. Leave html and body transparent, use fluid widths and fixed pixel heights for charts, never 100vh. Style it with Macro's theme variables on :root, which follow the user's light or dark mode: --foreground, --muted-foreground, --subtle-foreground, --card, --muted, --border, --border-muted, --accent, --accent-surface, --link, --success, --warning, --failure, --chart-1 to --chart-9 (series colors, in order), --font-sans, --font-mono, --text-xs to --text-2xl, --radius-sm, --radius, --radius-lg, --space-1 to --space-8. Plain headings, tables, code and buttons are already styled. Returns warnings for anything the sandbox or layout will break; fix them and render again. Pages up to 256 KB."
+    description = "Show a finished, self-contained HTML page (chart, table, diagram, dashboard, mockup) inline in this conversation, above your reply, and save it as an HTML document in the user's Visuals folder, to open and share. Call it before your final reply; the reply adds only what the page does not say. Read the Show Visuals skill before your first page. One document with inline <style> and <script>, run in a sandbox: no network requests, storage, forms or popups; scripts only from cdn.jsdelivr.net, unpkg.com or cdnjs.cloudflare.com; images as data: URLs or SVG. Leave html and body transparent, use fluid widths and fixed pixel heights for charts, never 100vh. Style it with Macro's theme variables on :root, which follow the user's light or dark mode: --foreground, --muted-foreground, --subtle-foreground, --card, --muted, --border, --border-muted, --accent, --accent-surface, --link, --success, --warning, --failure, --chart-1 to --chart-9 (series colors, in order), --font-sans, --font-mono, --text-xs to --text-2xl, --radius-sm, --radius, --radius-lg, --space-1 to --space-8. Plain headings, tables, code and buttons are already styled. Returns warnings for anything the sandbox or layout will break; fix them and render again. Pages up to 256 KB."
 )]
 pub struct RenderHtml {
     /// The page's short name.
@@ -63,6 +96,8 @@ pub struct RenderHtml {
 pub struct RenderHtmlResponse {
     /// The saved HTML document.
     pub document_id: uuid::Uuid,
+    /// The user's "Visuals" folder the document is saved in.
+    pub project_id: uuid::Uuid,
     /// The frame height used, after clamping to 80-2000.
     pub height: u32,
     /// What to fix before the page renders as intended; render again after
@@ -110,7 +145,7 @@ impl RenderHtml {
 }
 
 #[async_trait]
-impl<DSvc, ESvc, EDSvc> AsyncTool<DocumentToolContext<DSvc, ESvc, EDSvc>> for RenderHtml
+impl<DSvc, ESvc, EDSvc> AsyncTool<RenderHtmlContext<DSvc, ESvc, EDSvc>> for RenderHtml
 where
     DSvc: DocumentService + DocumentCreationService,
     ESvc: EntityAccessService,
@@ -121,7 +156,7 @@ where
     #[tracing::instrument(skip_all, err)]
     async fn call(
         &self,
-        service_context: ServiceContext<DocumentToolContext<DSvc, ESvc, EDSvc>>,
+        service_context: ServiceContext<RenderHtmlContext<DSvc, ESvc, EDSvc>>,
         request_context: RequestContext,
     ) -> ToolResult<Self::Output> {
         let (title, height) = self.validated()?;
@@ -136,14 +171,28 @@ where
             internal_error: error.into(),
         };
 
-        let principal = service_context.creation_principal(request_context.user_id.clone());
-        let document = NewPlainTextDocument::builder(NewDocumentMetadata::builder(title).build())
+        let principal = service_context
+            .documents
+            .creation_principal(request_context.user_id.clone());
+        let folder = service_context
+            .folders
+            .visuals_folder(&principal)
+            .await
+            .map_err(|error| ToolCallError {
+                description: "failed to find or create the Visuals folder".to_owned(),
+                internal_error: error,
+            })?;
+        let metadata = NewDocumentMetadata::builder(title)
+            .project_id(folder)
+            .build();
+        let document = NewPlainTextDocument::builder(metadata)
             .file_type(FileType::Html)
             .text(self.html.clone())
             .task_flag(false, None)
             .build()
             .map_err(failed)?;
         let created = service_context
+            .documents
             .creator
             .create_plain_text(&principal, document)
             .await
@@ -163,6 +212,7 @@ where
             })?;
         Ok(RenderHtmlResponse {
             document_id,
+            project_id: folder,
             height,
             warnings: page_warnings(&self.html),
         })

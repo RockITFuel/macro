@@ -15057,6 +15057,7 @@ export const RenderHtml = z.object({
 
 export const RenderHtmlResponse = z.object({
   documentId: z.string().uuid(),
+  projectId: z.string().uuid(),
   height: z.number().int().gte(0),
   warnings: z.array(z.string()).optional(),
 });

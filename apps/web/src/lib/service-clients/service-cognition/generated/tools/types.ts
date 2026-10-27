@@ -14726,7 +14726,7 @@ export interface RenderCanvas {
   crop?: CanvasBounds | null;
 }
 /**
- * Show a finished, self-contained HTML page (chart, table, diagram, dashboard, mockup) inline in this conversation, above your reply, and save it as an HTML document the user can open and share. Call it before your final reply; the reply adds only what the page does not say. Read the Show Visuals skill before your first page. One document with inline <style> and <script>, run in a sandbox: no network requests, storage, forms or popups; scripts only from cdn.jsdelivr.net, unpkg.com or cdnjs.cloudflare.com; images as data: URLs or SVG. Leave html and body transparent, use fluid widths and fixed pixel heights for charts, never 100vh. Style it with Macro's theme variables on :root, which follow the user's light or dark mode: --foreground, --muted-foreground, --subtle-foreground, --card, --muted, --border, --border-muted, --accent, --accent-surface, --link, --success, --warning, --failure, --chart-1 to --chart-9 (series colors, in order), --font-sans, --font-mono, --text-xs to --text-2xl, --radius-sm, --radius, --radius-lg, --space-1 to --space-8. Plain headings, tables, code and buttons are already styled. Returns warnings for anything the sandbox or layout will break; fix them and render again. Pages up to 256 KB.
+ * Show a finished, self-contained HTML page (chart, table, diagram, dashboard, mockup) inline in this conversation, above your reply, and save it as an HTML document in the user's Visuals folder, to open and share. Call it before your final reply; the reply adds only what the page does not say. Read the Show Visuals skill before your first page. One document with inline <style> and <script>, run in a sandbox: no network requests, storage, forms or popups; scripts only from cdn.jsdelivr.net, unpkg.com or cdnjs.cloudflare.com; images as data: URLs or SVG. Leave html and body transparent, use fluid widths and fixed pixel heights for charts, never 100vh. Style it with Macro's theme variables on :root, which follow the user's light or dark mode: --foreground, --muted-foreground, --subtle-foreground, --card, --muted, --border, --border-muted, --accent, --accent-surface, --link, --success, --warning, --failure, --chart-1 to --chart-9 (series colors, in order), --font-sans, --font-mono, --text-xs to --text-2xl, --radius-sm, --radius, --radius-lg, --space-1 to --space-8. Plain headings, tables, code and buttons are already styled. Returns warnings for anything the sandbox or layout will break; fix them and render again. Pages up to 256 KB.
  */
 export interface RenderHtml {
   /**
@@ -14750,6 +14750,10 @@ export interface RenderHtmlResponse {
    * The saved HTML document.
    */
   documentId: string;
+  /**
+   * The user's "Visuals" folder the document is saved in.
+   */
+  projectId: string;
   /**
    * The frame height used, after clamping to 80-2000.
    */

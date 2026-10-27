@@ -29,7 +29,8 @@ word docs, Illustrator/Photoshop files).
 - `src/inbound/toolset.rs`: one submodule per AI document tool (`create_document`,
   `edit_document`, `word_document`, `spreadsheet`, `presentation`, ...).
   `render_html` (`RenderHtml`) saves an agent's self-contained page as an
-  HTML document and returns its id and clamped frame height; it is not in
+  HTML document in the owner's top-level "Visuals" project (found or created
+  through the `VisualsFolder` port, one per owner, serialized per process) and returns its id and clamped frame height; it is not in
   `document_toolset`: `ai_tools` registers it only for hosts whose
   transcripts render it (AI chat, agent sessions).
 - `src/inbound/axum_router.rs`: the HTTP surface; `axum_router/get_text.rs`
