@@ -32,6 +32,7 @@
 **/target
 **/dist
 **/build
+!crates/ai_engine/src/build
 **/.wrangler
 **/test-results
 **/playwright-report
