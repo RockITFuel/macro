@@ -66,3 +66,25 @@ pub async fn handle_get_presigned_url(
 
     Ok((StatusCode::OK, presigned_url).into_response())
 }
+
+/// Redirect a permalink read to a presigned URL for the object. Unauthenticated
+/// like the CDN it stands in for; see `api::public_reads`.
+#[tracing::instrument(skip(storage_client))]
+pub async fn redirect_to_object(
+    State(storage_client): State<Arc<S3Client>>,
+    Path(Params { file_id }): Path<Params>,
+) -> Result<Response, Response> {
+    let s3_key = s3_key::StaticFileKey::new(&file_id).to_key();
+    let presigned_url = storage_client
+        .get_presigned_url(s3_key)
+        .await
+        .map_err(|err| {
+            tracing::error!(error=?err, "error getting presigned URL from S3");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to get presigned URL",
+            )
+                .into_response()
+        })?;
+    Ok(axum::response::Redirect::temporary(&presigned_url).into_response())
+}

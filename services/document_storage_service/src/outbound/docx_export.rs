@@ -69,6 +69,17 @@ impl DocxExportStore for ApiContext {
         parts: Vec<BomPart>,
     ) -> Result<String, Self::Err> {
         let key = store_export(&self.s3_client, document_id, parts).await?;
+        // An external S3 endpoint (R2) has no CloudFront: sign the read itself.
+        if macro_aws_config::s3_endpoint().is_some() {
+            return Ok(self
+                .s3_client
+                .get_document_presigned_url(
+                    &key,
+                    self.config
+                        .document_storage_service_presigned_url_expiry_seconds,
+                )
+                .await?);
+        }
         let signed_options = get_cloudfront_signed_options(
             &self
                 .config

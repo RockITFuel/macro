@@ -99,7 +99,16 @@ impl MailAttachmentFiles {
             record.attachment.filename.as_deref().unwrap_or_default()
         )
     }
-    fn url(&self, key: &str) -> Result<String, AttachmentError> {
+    async fn url(&self, key: &str) -> Result<String, AttachmentError> {
+        // An external S3 endpoint (R2) has no CloudFront: sign the read itself.
+        if macro_aws_config::s3_endpoint().is_some() {
+            let presigned = self
+                .s3
+                .get_presigned_url(&self.bucket, key, self.url_ttl_seconds)
+                .await
+                .map_err(failed)?;
+            return Ok(macro_aws_config::transform_aws_url(presigned.uri()));
+        }
         let url = format!("{}/{}", self.distribution_url, urlencoding::encode(key));
         // Local stacks have no CloudFront signer; like document URLs, the
         // distribution URL is the stack's storage route itself.
@@ -130,7 +139,7 @@ impl AttachmentFiles for MailAttachmentFiles {
     ) -> Result<Option<String>, AttachmentError> {
         let key = Self::key(record);
         if self.s3.exists(&self.bucket, &key).await.map_err(failed)? {
-            Ok(Some(self.url(&key)?))
+            Ok(Some(self.url(&key).await?))
         } else {
             Ok(None)
         }
@@ -145,7 +154,7 @@ impl AttachmentFiles for MailAttachmentFiles {
             .put(&self.bucket, &key, &bytes)
             .await
             .map_err(failed)?;
-        self.url(&key)
+        self.url(&key).await
     }
     async fn store_document(
         &self,

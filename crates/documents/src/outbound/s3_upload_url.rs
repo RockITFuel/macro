@@ -10,6 +10,10 @@ use s3_key::{SYNC_SERVICE_SNAPSHOT_PREFIX, document_key_url_path};
 
 use crate::domain::ports::PresignedUploadUrlPort;
 
+/// How long a presigned document read stays valid; matches the CloudFront
+/// signing deployed environments use.
+const DOCUMENT_GET_EXPIRY: Duration = Duration::from_secs(60 * 60);
+
 fn snapshot_key(document_id: &str) -> String {
     format!("{SYNC_SERVICE_SNAPSHOT_PREFIX}/{document_id}")
 }
@@ -38,8 +42,19 @@ impl S3UploadUrlAdapter {
 
 impl PresignedUploadUrlPort for S3UploadUrlAdapter {
     #[tracing::instrument(skip(self), err)]
+    async fn get_document_storage_presigned_url(&self, key: &str) -> anyhow::Result<String> {
+        macro_aws_config::presigned_get_url(
+            &self.client,
+            &self.document_storage_bucket,
+            key,
+            DOCUMENT_GET_EXPIRY,
+        )
+        .await
+    }
+
+    #[tracing::instrument(skip(self), err)]
     async fn delete_object(&self, key: &str) -> anyhow::Result<()> {
-        if macro_aws_config::is_local_aws() {
+        if macro_aws_config::s3_is_local() {
             return Ok(());
         }
         self.client
@@ -87,7 +102,7 @@ impl PresignedUploadUrlPort for S3UploadUrlAdapter {
 
     #[tracing::instrument(skip(self), err)]
     async fn copy_object(&self, source_key: &str, destination_key: &str) -> anyhow::Result<()> {
-        if macro_aws_config::is_local_aws() {
+        if macro_aws_config::s3_is_local() {
             return Ok(());
         }
 
@@ -137,7 +152,7 @@ impl PresignedUploadUrlPort for S3UploadUrlAdapter {
 
     #[tracing::instrument(skip(self, bytes), err)]
     async fn upload_snapshot(&self, document_id: &str, bytes: Vec<u8>) -> anyhow::Result<()> {
-        if macro_aws_config::is_local_aws() {
+        if macro_aws_config::s3_is_local() {
             return Ok(());
         }
 

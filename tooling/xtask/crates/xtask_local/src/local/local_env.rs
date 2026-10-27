@@ -124,7 +124,7 @@ impl LocalEnv {
             preview_ssh_port: instance.port(Port::PreviewSsh),
             preview_https_port: instance.port(Port::PreviewHttps),
             infra,
-            storage: StorageEnv::local(),
+            storage: StorageEnv::for_self_host(self_host),
             queues: QueueEnv::local(),
             mail: MailEnv::for_self_host(self_host)?,
             agent_harness: AgentHarnessEnv::local(
@@ -435,16 +435,41 @@ impl InfraEnv {
 
 /// S3 buckets and DynamoDB tables, emitted straight from the shared
 /// [`resources`] catalog so they can't drift from what LocalStack provisions.
-struct StorageEnv;
+struct StorageEnv {
+    self_host: SelfHost,
+}
 
 impl StorageEnv {
-    fn local() -> Self {
-        StorageEnv
+    fn for_self_host(self_host: &SelfHost) -> Self {
+        StorageEnv {
+            self_host: self_host.clone(),
+        }
     }
 
     fn write(&self, env: &mut BTreeMap<String, String>) {
         for bucket in resources::BUCKETS {
-            env.insert(bucket.env_key.into(), bucket.name.into());
+            env.insert(
+                bucket.env_key.into(),
+                self.self_host.bucket_name(bucket.name),
+            );
+        }
+        // Objects on an external endpoint (R2); everything else stays on
+        // LocalStack. Read by `macro_aws_config::s3_client`.
+        if let Some(endpoint) = &self.self_host.s3_endpoint {
+            env.insert("S3_ENDPOINT".into(), endpoint.clone());
+            for (key, value) in [
+                ("S3_ACCESS_KEY_ID", &self.self_host.s3_access_key_id),
+                ("S3_SECRET_ACCESS_KEY", &self.self_host.s3_secret_access_key),
+            ] {
+                env.insert(key.into(), value.clone().unwrap_or_default());
+            }
+            env.insert(
+                "S3_REGION".into(),
+                self.self_host
+                    .s3_region
+                    .clone()
+                    .unwrap_or_else(|| "auto".into()),
+            );
         }
         for table in resources::TABLES {
             env.insert(table.env_key.into(), table.name.into());

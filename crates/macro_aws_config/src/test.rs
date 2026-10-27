@@ -205,3 +205,12 @@ fn storage_proxy_rewrite_is_scoped_to_its_origin_and_path() {
         );
     }
 }
+
+#[test]
+fn without_an_s3_endpoint_object_storage_follows_local_aws() {
+    // Neither LOCAL_AWS_URL nor S3_ENDPOINT is set under `cargo test`.
+    assert!(s3_endpoint().is_none());
+    assert!(!s3_is_local());
+    let r2 = "https://account.r2.cloudflarestorage.com/macro-doc-storage/key?X-Amz-Signature=x";
+    assert_eq!(transform_aws_url(r2), r2);
+}

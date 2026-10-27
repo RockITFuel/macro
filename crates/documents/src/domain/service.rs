@@ -398,7 +398,15 @@ impl<
         )
     }
 
-    fn make_presigned_url(&self, key: &str) -> anyhow::Result<String> {
+    async fn make_presigned_url(&self, key: &str) -> anyhow::Result<String> {
+        // An external S3 endpoint (R2) has no CloudFront in front of it: sign
+        // the object read itself.
+        if macro_aws_config::s3_endpoint().is_some() {
+            return self
+                .upload_url_service
+                .get_document_storage_presigned_url(key)
+                .await;
+        }
         let constructed_url = self.cloudfront_url_for_key(key);
         let options = self.get_signed_options();
 
@@ -431,7 +439,7 @@ impl<
         let document_key =
             build_cloud_storage_bucket_document_key(owner, document_id, document_version_id);
 
-        let signed_url = self.make_presigned_url(&document_key)?;
+        let signed_url = self.make_presigned_url(&document_key).await?;
         Ok(LocationResponseData::PresignedUrl(signed_url))
     }
 
@@ -450,7 +458,7 @@ impl<
         let document_key =
             build_cloud_storage_bucket_document_key(owner, document_id, document_version_id);
 
-        let signed_url = self.make_presigned_url(&document_key)?;
+        let signed_url = self.make_presigned_url(&document_key).await?;
         Ok(LocationResponseData::PresignedUrl(signed_url))
     }
 
@@ -461,7 +469,7 @@ impl<
     ) -> anyhow::Result<LocationResponseData> {
         let document_key = build_docx_to_pdf_converted_document_key(owner, document_id);
 
-        let signed_url = self.make_presigned_url(&document_key)?;
+        let signed_url = self.make_presigned_url(&document_key).await?;
         Ok(LocationResponseData::PresignedUrl(signed_url))
     }
 

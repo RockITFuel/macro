@@ -128,6 +128,20 @@ async fn sign_document_key(
         }
     }
 
+    // An external S3 endpoint (R2) has no CloudFront: sign the read itself.
+    if macro_aws_config::s3_endpoint().is_some() {
+        let signed_url = state
+            .s3_client
+            .get_document_presigned_url(
+                key,
+                state
+                    .config
+                    .document_storage_service_presigned_url_expiry_seconds,
+            )
+            .await?;
+        return Ok(LocationResponseData::PresignedUrl(signed_url));
+    }
+
     let signed_options = get_cloudfront_signed_options(
         &state
             .config

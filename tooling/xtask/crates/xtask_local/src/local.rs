@@ -729,7 +729,7 @@ fn prepare(
         instance,
         mode,
         static_frontend,
-        SelfHost::from_env(&env.merged).is_public(),
+        &SelfHost::from_env(&env.merged),
     )?;
     if mode == Mode::Local {
         portmap::write(instance)?;

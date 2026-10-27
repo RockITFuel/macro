@@ -86,6 +86,7 @@ pub async fn setup_and_serve(
             // service key headers instead of a jwt
             file::router(),
         )
+        .merge(public_reads())
         .with_state(state)
         .merge(
             SwaggerUi::new("/api/docs")
@@ -108,4 +109,19 @@ pub async fn setup_and_serve(
     axum::serve(listener, app.into_make_service())
         .await
         .context("error starting service")
+}
+
+/// Permalink reads (`<public url>/file/<id>`) when objects live behind an
+/// external S3 endpoint (R2): there is no CDN in front of the bucket, so the
+/// service answers them with a short-lived presigned redirect. The permalink
+/// is the capability, as it is for the CDN.
+fn public_reads() -> Router<AppState> {
+    if macro_aws_config::s3_endpoint().is_some() {
+        Router::new().route(
+            "/file/{file_id}",
+            axum::routing::get(file::get_file::redirect_to_object),
+        )
+    } else {
+        Router::new()
+    }
 }

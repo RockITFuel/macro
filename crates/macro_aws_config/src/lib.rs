@@ -16,13 +16,83 @@ maybe_env_var! {
     pub struct LocalAwsPublicUrl;
 }
 
-/// Creates an S3 client
+macro_env_var::maybe_env_vars! {
+    /// An S3-compatible endpoint (Cloudflare R2) for object storage only;
+    /// SQS, DynamoDB and KMS stay where `LOCAL_AWS_URL` points.
+    #[derive(Clone)]
+    pub struct S3Endpoint;
+    /// Access key id for [`S3Endpoint`].
+    pub struct S3AccessKeyId;
+    /// Secret access key for [`S3Endpoint`].
+    pub struct S3SecretAccessKey;
+    /// Region for [`S3Endpoint`]; `auto` for R2 when unset.
+    pub struct S3Region;
+}
+
+/// The external S3 endpoint object storage uses, when one is configured.
+pub fn s3_endpoint() -> Option<String> {
+    S3Endpoint::new()
+        .and_then(|endpoint| endpoint.value().map(str::to_owned))
+        .filter(|endpoint| !endpoint.trim().is_empty())
+}
+
+/// Whether object storage is LocalStack: local AWS without an external S3
+/// endpoint. Local-only shortcuts that exist because LocalStack is a stand-in
+/// (unsigned object URLs, skipped copies) apply only then.
+pub fn s3_is_local() -> bool {
+    is_local_aws() && s3_endpoint().is_none()
+}
+
+/// Creates an S3 client: the external [`S3Endpoint`] with its own
+/// credentials when configured, otherwise the shared AWS config.
 #[cfg(feature = "s3")]
 pub async fn s3_client() -> aws_sdk_s3::Client {
+    if let Some(endpoint) = s3_endpoint() {
+        let value = |var: Option<String>| var.unwrap_or_default();
+        let credentials = aws_sdk_s3::config::Credentials::new(
+            value(S3AccessKeyId::new().and_then(|v| v.value().map(str::to_owned))),
+            value(S3SecretAccessKey::new().and_then(|v| v.value().map(str::to_owned))),
+            None,
+            None,
+            "s3-endpoint",
+        );
+        let region = S3Region::new()
+            .and_then(|v| v.value().map(str::to_owned))
+            .filter(|region| !region.trim().is_empty())
+            .unwrap_or_else(|| "auto".to_owned());
+        let s3_config = aws_sdk_s3::config::Builder::new()
+            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+            .endpoint_url(endpoint)
+            .region(aws_sdk_s3::config::Region::new(region))
+            .credentials_provider(credentials)
+            .force_path_style(true)
+            .build();
+        return aws_sdk_s3::Client::from_conf(s3_config);
+    }
     let s3_config = aws_sdk_s3::config::Builder::from(&get_macro_aws_config().await)
         .force_path_style(is_local_aws())
         .build();
     aws_sdk_s3::Client::from_conf(s3_config)
+}
+
+/// A presigned GET URL for `key` in `bucket`, valid for `expires_in`, in the
+/// form a browser can open.
+#[cfg(feature = "s3")]
+pub async fn presigned_get_url(
+    client: &aws_sdk_s3::Client,
+    bucket: &str,
+    key: &str,
+    expires_in: std::time::Duration,
+) -> anyhow::Result<String> {
+    let presigned = client
+        .get_object()
+        .bucket(bucket)
+        .key(key)
+        .presigned(aws_sdk_s3::presigning::PresigningConfig::expires_in(
+            expires_in,
+        )?)
+        .await?;
+    Ok(transform_aws_url(presigned.uri()))
 }
 
 /// Creates an SQS client
@@ -96,7 +166,8 @@ fn transform_local_url(url: &str, public_url: Option<&str>) -> String {
 /// `LOCAL_AWS_PUBLIC_URL`, when set by the local stack, supplies the browser-facing
 /// endpoint so named instances can use their HTTPS storage proxy.
 pub fn transform_aws_url(url: &str) -> String {
-    if is_local_aws() {
+    // An external S3 endpoint's URLs are already browser-reachable.
+    if s3_is_local() {
         let public_url = LocalAwsPublicUrl::new();
         return transform_local_url(url, public_url.as_ref().map(|url| url.as_ref()));
     }

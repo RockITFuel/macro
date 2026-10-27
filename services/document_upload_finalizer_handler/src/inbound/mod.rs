@@ -3,3 +3,4 @@
 pub mod eventbridge;
 pub mod local_sqs;
 pub mod s3_notification;
+pub mod storage_poll;

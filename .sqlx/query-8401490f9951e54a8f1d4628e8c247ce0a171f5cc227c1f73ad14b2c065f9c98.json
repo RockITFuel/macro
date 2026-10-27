@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT d.id, d.owner\n        FROM \"Document\" d\n        WHERE d.uploaded = false\n          AND d.\"deletedAt\" IS NULL\n          AND d.\"createdAt\" > now() - make_interval(hours => $1)\n        ORDER BY d.\"createdAt\" DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "owner",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8401490f9951e54a8f1d4628e8c247ce0a171f5cc227c1f73ad14b2c065f9c98"
+}

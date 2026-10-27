@@ -81,15 +81,23 @@ pub fn write_caddyfile(
     instance: &Instance,
     mode: Mode,
     static_frontend: bool,
-    public: bool,
+    self_host: &super::self_host::SelfHost,
 ) -> Result<PathBuf> {
     let path = caddyfile_path(instance);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("creating proxy dir {}", dir.display()))?;
     }
-    std::fs::write(&path, caddyfile(mode, static_frontend, public))
-        .with_context(|| format!("writing {}", path.display()))?;
+    std::fs::write(
+        &path,
+        caddyfile(
+            mode,
+            static_frontend,
+            self_host.is_public(),
+            self_host.external_storage(),
+        ),
+    )
+    .with_context(|| format!("writing {}", path.display()))?;
     Ok(path)
 }
 
@@ -97,8 +105,11 @@ pub fn write_caddyfile(
 /// the generated per-service routes (from the inventory), the special
 /// non-inventory routes, the mode's static-file block, the optional
 /// static-frontend block, then the tail.
-fn caddyfile(mode: Mode, static_frontend: bool, public: bool) -> String {
-    let static_block = if !mode.spec().static_files_via_localstack {
+fn caddyfile(mode: Mode, static_frontend: bool, public: bool, external_storage: bool) -> String {
+    // Objects on an external endpoint (R2) are read through presigned URLs:
+    // no `/local-storage`, and the static-file service answers permalinks
+    // itself, as it does for dev.
+    let static_block = if !mode.spec().static_files_via_localstack || external_storage {
         STATIC_FILE_DEV.to_owned()
     } else if public {
         public_storage_block()

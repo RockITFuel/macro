@@ -140,3 +140,12 @@ fn a_public_stack_needs_a_valid_local_encryption_key() {
     let error = check(&short, &BTreeMap::new()).unwrap_err().to_string();
     assert!(error.contains("32 bytes"), "{error}");
 }
+
+#[test]
+fn an_s3_endpoint_needs_its_credentials() {
+    let missing = env(&[(S3_ENDPOINT, "https://account.r2.cloudflarestorage.com")]);
+    let error = check(&missing, &BTreeMap::new()).unwrap_err().to_string();
+    assert!(error.contains(S3_ACCESS_KEY_ID), "{error}");
+    let settings = SelfHost::from_env(&env(&[(S3_BUCKET_PREFIX, "macro-")]));
+    assert_eq!(settings.bucket_name("doc-storage"), "doc-storage");
+}

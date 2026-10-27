@@ -48,6 +48,18 @@ pub const SIGNUP_ALLOWED_DOMAINS: &str = "MACRO_SIGNUP_ALLOWED_DOMAINS";
 /// instead of LocalStack KMS (whose keys a restart loses). Required on a
 /// public stack; losing it makes stored credentials unreadable.
 pub const LOCAL_ENCRYPTION_KEY: &str = "MACRO_LOCAL_ENCRYPTION_KEY";
+/// An external S3-compatible endpoint (Cloudflare R2) for object storage,
+/// e.g. `https://<account>.r2.cloudflarestorage.com`. Unset, objects live in
+/// LocalStack.
+pub const S3_ENDPOINT: &str = "MACRO_S3_ENDPOINT";
+/// Access key id for [`S3_ENDPOINT`].
+pub const S3_ACCESS_KEY_ID: &str = "MACRO_S3_ACCESS_KEY_ID";
+/// Secret access key for [`S3_ENDPOINT`].
+pub const S3_SECRET_ACCESS_KEY: &str = "MACRO_S3_SECRET_ACCESS_KEY";
+/// Region for [`S3_ENDPOINT`]; `auto` (R2) when unset.
+pub const S3_REGION: &str = "MACRO_S3_REGION";
+/// Prefix for every bucket name on [`S3_ENDPOINT`], e.g. `macro-`.
+pub const S3_BUCKET_PREFIX: &str = "MACRO_S3_BUCKET_PREFIX";
 /// A prebuilt static bundle (`stack build-frontend`) to serve instead of
 /// building one with bun.
 pub const FRONTEND_BUNDLE: &str = "MACRO_FRONTEND_BUNDLE";
@@ -61,7 +73,7 @@ pub const FUSIONAUTH_API_KEY: &str = "FUSIONAUTH_API_KEY";
 
 /// The settings that exist only here; the two keys above are written by
 /// [`super::local_env::LocalEnv`] under each of their names.
-const KEYS: [&str; 16] = [
+const KEYS: [&str; 21] = [
     PUBLIC_ORIGIN,
     FUSIONAUTH_PUBLIC_URL,
     BIND_ADDRESS,
@@ -78,6 +90,11 @@ const KEYS: [&str; 16] = [
     SIGNUP_ALLOWED_DOMAINS,
     FRONTEND_BUNDLE,
     LOCAL_ENCRYPTION_KEY,
+    S3_ENDPOINT,
+    S3_ACCESS_KEY_ID,
+    S3_SECRET_ACCESS_KEY,
+    S3_REGION,
+    S3_BUCKET_PREFIX,
 ];
 
 /// Today's Postgres password, baked into `docker/docker-compose-databases.yml`.
@@ -104,6 +121,11 @@ pub struct SelfHost {
     pub signup_allowed_domains: Option<String>,
     pub frontend_bundle: Option<String>,
     pub local_encryption_key: Option<String>,
+    pub s3_endpoint: Option<String>,
+    pub s3_access_key_id: Option<String>,
+    pub s3_secret_access_key: Option<String>,
+    pub s3_region: Option<String>,
+    pub s3_bucket_prefix: Option<String>,
 }
 
 /// A configured SMTP server, as FusionAuth and the services both use it.
@@ -142,6 +164,11 @@ impl SelfHost {
             signup_allowed_domains: get(SIGNUP_ALLOWED_DOMAINS),
             frontend_bundle: get(FRONTEND_BUNDLE),
             local_encryption_key: get(LOCAL_ENCRYPTION_KEY),
+            s3_endpoint: url(S3_ENDPOINT),
+            s3_access_key_id: get(S3_ACCESS_KEY_ID),
+            s3_secret_access_key: get(S3_SECRET_ACCESS_KEY),
+            s3_region: get(S3_REGION),
+            s3_bucket_prefix: get(S3_BUCKET_PREFIX),
         }
     }
 
@@ -188,6 +215,22 @@ impl SelfHost {
     /// Read the settings back from a resolved env.
     pub fn from_env(env: &BTreeMap<String, String>) -> Self {
         Self::from_lookup(|key| env.get(key).cloned())
+    }
+
+    /// Whether objects live on an external S3 endpoint (R2) instead of
+    /// LocalStack.
+    pub fn external_storage(&self) -> bool {
+        self.s3_endpoint.is_some()
+    }
+
+    /// The name a catalog bucket has on this stack: prefixed on an external
+    /// endpoint, where bucket names are shared with everything else in the
+    /// account.
+    pub fn bucket_name(&self, name: &str) -> String {
+        match (&self.s3_endpoint, &self.s3_bucket_prefix) {
+            (Some(_), Some(prefix)) => format!("{prefix}{name}"),
+            _ => name.to_owned(),
+        }
     }
 
     /// Whether the stack serves a public origin rather than localhost.
@@ -251,6 +294,11 @@ impl SelfHost {
             &self.signup_allowed_domains,
             &self.frontend_bundle,
             &self.local_encryption_key,
+            &self.s3_endpoint,
+            &self.s3_access_key_id,
+            &self.s3_secret_access_key,
+            &self.s3_region,
+            &self.s3_bucket_prefix,
         ];
         for (key, value) in KEYS.into_iter().zip(values) {
             if let Some(value) = value {
@@ -268,6 +316,11 @@ impl SelfHost {
 pub fn check(env: &BTreeMap<String, String>, fixtures: &BTreeMap<String, String>) -> Result<()> {
     let self_host = SelfHost::from_env(env);
     let smtp = self_host.smtp()?;
+    if self_host.s3_endpoint.is_some()
+        && (self_host.s3_access_key_id.is_none() || self_host.s3_secret_access_key.is_none())
+    {
+        bail!("{S3_ENDPOINT} needs {S3_ACCESS_KEY_ID} and {S3_SECRET_ACCESS_KEY}");
+    }
     if let Some(key) = &self_host.local_encryption_key {
         local_kms::LocalKms::from_base64(key)
             .map_err(|_| anyhow::anyhow!("{LOCAL_ENCRYPTION_KEY} must be base64 of 32 bytes"))?;

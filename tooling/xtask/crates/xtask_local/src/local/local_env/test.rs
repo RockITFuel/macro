@@ -897,3 +897,47 @@ fn a_configured_smtp_server_reaches_the_services() {
     );
     assert_eq!(env["SIGNUP_ALLOWED_DOMAINS"], "example.com,example.org");
 }
+
+#[test]
+fn an_external_s3_endpoint_gets_prefixed_buckets_and_its_credentials() {
+    let instance = Instance::derive(Some("r2-env"), None).unwrap();
+    let self_host = SelfHost::from_lookup(|key| {
+        match key {
+            "MACRO_S3_ENDPOINT" => Some("https://account.r2.cloudflarestorage.com/"),
+            "MACRO_S3_ACCESS_KEY_ID" => Some("r2-key"),
+            "MACRO_S3_SECRET_ACCESS_KEY" => Some("r2-secret"),
+            "MACRO_S3_BUCKET_PREFIX" => Some("macro-"),
+            _ => None,
+        }
+        .map(str::to_owned)
+    });
+    let env = LocalEnv::for_instance(Mode::Local, &instance, true, Tunnels::default(), &self_host)
+        .unwrap()
+        .to_env();
+    assert_eq!(
+        env["S3_ENDPOINT"],
+        "https://account.r2.cloudflarestorage.com"
+    );
+    assert_eq!(env["S3_ACCESS_KEY_ID"], "r2-key");
+    assert_eq!(env["S3_SECRET_ACCESS_KEY"], "r2-secret");
+    assert_eq!(env["S3_REGION"], "auto");
+    for bucket in resources::BUCKETS {
+        assert_eq!(env[bucket.env_key], format!("macro-{}", bucket.name));
+    }
+
+    // Without an endpoint the prefix is ignored and nothing points elsewhere.
+    let local = LocalEnv::for_instance(
+        Mode::Local,
+        &instance,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
+    assert!(!local.contains_key("S3_ENDPOINT"));
+    assert_eq!(
+        local["DOCUMENT_STORAGE_BUCKET"],
+        resources::DOC_STORAGE_BUCKET
+    );
+}
