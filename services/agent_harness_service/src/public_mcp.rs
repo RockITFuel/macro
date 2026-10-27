@@ -70,6 +70,15 @@ pub async fn router(
         .host_str()
         .context("public MCP URL has no host")?
         .to_owned();
+    // The harness's own agents reach this endpoint through `McpServiceUrl`,
+    // which on a local stack is the in-network `agent-harness-service`
+    // address, not the public one; without it every agent session loses
+    // Macro's tools to the DNS-rebinding check.
+    let mcp_service_host = macro_service_urls::McpServiceUrl::new()?
+        .parse_url()?
+        .host_str()
+        .context("MCP service URL has no host")?
+        .to_owned();
     // Built once: the factory runs per request in stateless mode.
     let tools = ai_tools::tools_for(ai_tools::AiHost::Mcp).toolset;
     let code_mode = code_mode.map(|code_mode| {
@@ -102,6 +111,7 @@ pub async fn router(
         {
             let mut config = StreamableHttpServerConfig::default().with_allowed_hosts([
                 mcp_public_host.clone(),
+                mcp_service_host.clone(),
                 "localhost".into(),
                 "127.0.0.1".into(),
                 "gateway.macro.com".into(),
