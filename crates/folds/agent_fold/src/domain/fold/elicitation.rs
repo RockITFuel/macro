@@ -632,7 +632,20 @@ fn titled_option(option: &EnumOption) -> ElicitationOption {
         value: option.value.clone(),
         title: Some(option.title.clone()),
         description: option.description.clone(),
+        preview: option_preview(option),
     }
+}
+
+/// An option's preview sketch, under `_meta.macro.preview`.
+fn option_preview(option: &EnumOption) -> Option<String> {
+    option
+        .meta
+        .as_ref()?
+        .get("macro")?
+        .get("preview")?
+        .as_str()
+        .filter(|preview| !preview.trim().is_empty())
+        .map(str::to_owned)
 }
 
 fn untitled_option(value: &str) -> ElicitationOption {
@@ -640,6 +653,7 @@ fn untitled_option(value: &str) -> ElicitationOption {
         value: value.to_owned(),
         title: None,
         description: None,
+        preview: None,
     }
 }
 

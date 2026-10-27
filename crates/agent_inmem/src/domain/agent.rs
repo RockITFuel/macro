@@ -8,7 +8,7 @@
 //!
 //! [`RuntimeAttachment::solo`]: agent_session::domain::connection::RuntimeAttachment::solo
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -21,15 +21,16 @@ use agent_api_keys::domain::{AgentKeys, ModelProvider, UsableAgentKey};
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate,
     BooleanPropertySchema, CancelNotification, ContentBlock, ContentChunk,
-    CreateElicitationRequest, ElicitationAction, ElicitationFormMode, ElicitationPropertySchema,
-    ElicitationSchema, ElicitationSessionScope, EnumOption, Implementation, InitializeRequest,
-    InitializeResponse, IntegerPropertySchema, Meta, NewSessionRequest, NewSessionResponse,
-    NumberPropertySchema, OtherElicitationPropertySchema, PromptRequest, PromptResponse, RequestId,
-    ResumeSessionRequest, ResumeSessionResponse, SessionCapabilities, SessionConfigOption,
-    SessionId, SessionNotification, SessionResumeCapabilities, SessionUpdate,
-    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, StopReason, StringFormat,
-    StringPropertySchema, ToolCall as AcpToolCall, ToolCallId, ToolCallStatus, ToolCallUpdate,
-    ToolCallUpdateFields, ToolKind, UnstructuredCommandInput,
+    CreateElicitationRequest, ElicitationAction, ElicitationContentValue, ElicitationFormMode,
+    ElicitationPropertySchema, ElicitationSchema, ElicitationSessionScope, EnumOption,
+    Implementation, InitializeRequest, InitializeResponse, IntegerPropertySchema, Meta,
+    MultiSelectPropertySchema, NewSessionRequest, NewSessionResponse, NumberPropertySchema,
+    OtherElicitationPropertySchema, PromptRequest, PromptResponse, RequestId, ResumeSessionRequest,
+    ResumeSessionResponse, SessionCapabilities, SessionConfigOption, SessionId,
+    SessionNotification, SessionResumeCapabilities, SessionUpdate, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, StopReason, StringFormat, StringPropertySchema,
+    ToolCall as AcpToolCall, ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
+    ToolKind, UnstructuredCommandInput,
 };
 use agent_client_protocol::{
     Agent, Channel as AcpChannel, Client, ConnectionTo, Error as AcpError,
@@ -52,8 +53,8 @@ use crate::domain::mcp::{DynMcpToolConnector, dialable_servers};
 use crate::domain::model_options::REASONING_EFFORT_CONFIG_ID;
 use crate::domain::session::{HistoryEntry, SessionStore, UserPrompt, messages_for_turn};
 use crate::domain::user_input::{
-    SharedUserInputRequester, UserInputError, UserInputOutcome, UserInputRequest,
-    UserInputRequester,
+    SharedUserInputRequester, UserInputAnswer, UserInputError, UserInputOption, UserInputOutcome,
+    UserInputRequest, UserInputRequester,
 };
 use agent_client_protocol::schema::v1::McpServer as AcpMcpServer;
 use mcp_toolset::RemoteMcpToolSet;
@@ -533,55 +534,179 @@ fn string_format(format: &str) -> Option<StringFormat> {
     }
 }
 
+/// The property a question's "Other" answer is sent back under: the select's
+/// name with Claude Code's `_custom` suffix.
+const ASK_OTHER_FIELD: &str = "answer_custom";
+
+/// The shared `_meta` marker that pairs a free-text "Other" property with the
+/// select it stands in for (Claude Code's `AskUserQuestion` bridge writes the
+/// same one, and the transcript fold collapses the pair into one field).
+const CUSTOM_ANSWER_MARKER: &str = "_askUserQuestionCustomAnswer";
+
+/// The key under `_meta.macro` on an option carrying its preview sketch.
+const OPTION_PREVIEW_META_KEY: &str = "preview";
+
+/// One offered option as ACP's titled enum value, its preview under
+/// `_meta.macro.preview`.
+fn enum_option(option: &UserInputOption) -> EnumOption {
+    let mut meta = None;
+    if let Some(preview) = &option.preview {
+        let mut ours = serde_json::Map::new();
+        ours.insert(
+            OPTION_PREVIEW_META_KEY.to_owned(),
+            serde_json::Value::String(preview.clone()),
+        );
+        let mut namespaced = Meta::new();
+        namespaced.insert(META_NAMESPACE.to_owned(), serde_json::Value::Object(ours));
+        meta = Some(namespaced);
+    }
+    EnumOption::new(option.label.clone(), option.label.clone())
+        .description(option.description.clone())
+        .meta(meta)
+}
+
+/// A question as ACP's restricted form: one `answer` field (free text, a
+/// select or a multi-select) and, when the user may type their own answer, an
+/// `answer_custom` companion carrying the shared "Other" marker.
+fn question_form_schema(request: &UserInputRequest) -> ElicitationSchema {
+    let title = request
+        .header
+        .clone()
+        .unwrap_or_else(|| "Answer".to_owned());
+    let options: Vec<EnumOption> = request.options.iter().map(enum_option).collect();
+    let field: ElicitationPropertySchema = if options.is_empty() {
+        StringPropertySchema::new().title(title.clone()).into()
+    } else if request.multi_select {
+        MultiSelectPropertySchema::titled(options)
+            .title(title.clone())
+            .into()
+    } else {
+        StringPropertySchema::new()
+            .title(title.clone())
+            .one_of(options)
+            .into()
+    };
+    // With an "Other" companion neither field alone is required: the user
+    // answers with one or the other.
+    let mut schema = ElicitationSchema::new()
+        .title(request.header.clone())
+        .property(ASK_FIELD, field, !request.allow_other);
+    if request.allow_other {
+        let mut marker = Meta::new();
+        marker.insert(
+            CUSTOM_ANSWER_MARKER.to_owned(),
+            serde_json::json!({ "questionId": ASK_FIELD, "isCustomAnswer": true }),
+        );
+        schema = schema.property(
+            ASK_OTHER_FIELD,
+            StringPropertySchema::new()
+                .title("Other")
+                .description("Type your own answer instead of choosing an option above.")
+                .meta(marker),
+            false,
+        );
+    }
+    schema
+}
+
+/// The user's answer to `request` out of an accepted form's content,
+/// checked against what was offered.
+fn read_question_answer(
+    request: &UserInputRequest,
+    content: Option<&BTreeMap<String, ElicitationContentValue>>,
+) -> Result<UserInputAnswer, UserInputError> {
+    let value = |name: &str| {
+        content
+            .and_then(|content| content.get(name))
+            .and_then(|value| serde_json::to_value(value).ok())
+    };
+    let offered = |label: &str| request.options.iter().any(|option| option.label == label);
+
+    if request.allow_other
+        && let Some(other) = value(ASK_OTHER_FIELD)
+    {
+        let serde_json::Value::String(other) = other else {
+            return Err(UserInputError::InvalidAnswer(
+                "the typed answer was not a string".to_owned(),
+            ));
+        };
+        let other = other.trim();
+        if !other.is_empty() {
+            return Ok(UserInputAnswer::text(other));
+        }
+    }
+
+    let answer = value(ASK_FIELD).ok_or(UserInputError::MissingAnswer)?;
+    if request.options.is_empty() {
+        let serde_json::Value::String(answer) = answer else {
+            return Err(UserInputError::InvalidAnswer(
+                "the answer was not a string".to_owned(),
+            ));
+        };
+        return Ok(UserInputAnswer::text(answer));
+    }
+    let chosen: Vec<String> = match answer {
+        serde_json::Value::String(answer) if !request.multi_select => vec![answer],
+        serde_json::Value::Array(values) if request.multi_select => values
+            .into_iter()
+            .map(|value| match value {
+                serde_json::Value::String(value) => Ok(value),
+                _ => Err(UserInputError::InvalidAnswer(
+                    "a chosen option was not a string".to_owned(),
+                )),
+            })
+            .collect::<Result<_, _>>()?,
+        _ => {
+            return Err(UserInputError::InvalidAnswer(if request.multi_select {
+                "the answer was not a list of options".to_owned()
+            } else {
+                "the answer was not a string".to_owned()
+            }));
+        }
+    };
+    if let Some(stray) = chosen.iter().find(|label| !offered(label)) {
+        return Err(UserInputError::InvalidAnswer(format!(
+            "{stray:?} was not one of the offered options"
+        )));
+    }
+    if chosen.is_empty() {
+        return Err(UserInputError::MissingAnswer);
+    }
+    // In the order offered, once each.
+    let selected = request
+        .options
+        .iter()
+        .filter(|option| chosen.contains(&option.label))
+        .map(|option| option.label.clone())
+        .collect();
+    Ok(UserInputAnswer {
+        selected,
+        other: None,
+    })
+}
+
 #[async_trait]
 impl UserInputRequester for AcpUserInputRequester {
     async fn ask(&self, request: UserInputRequest) -> Result<UserInputOutcome, UserInputError> {
         let _waiting = self.awaiting.begin();
-        let options = request.options;
-        let mut field = StringPropertySchema::new().title("Answer");
-        if !options.is_empty() {
-            field = field.one_of(
-                options
-                    .iter()
-                    .map(|option| EnumOption::new(option.clone(), option.clone()))
-                    .collect::<Vec<_>>(),
-            );
-        }
-        let schema = ElicitationSchema::new().property(ASK_FIELD, field, true);
-        let request = CreateElicitationRequest::new(
+        let elicitation = CreateElicitationRequest::new(
             ElicitationFormMode::new(
                 ElicitationSessionScope::new(self.session_id.clone()),
-                schema,
+                question_form_schema(&request),
             ),
-            request.question,
+            request.question.clone(),
         );
 
         let response = self
             .connection
-            .send_request(request)
+            .send_request(elicitation)
             .block_task()
             .await
             .map_err(|error| UserInputError::RequestFailed(error.to_string()))?;
         match response.action {
-            ElicitationAction::Accept(accept) => {
-                let answer = accept
-                    .content
-                    .as_ref()
-                    .and_then(|content| content.get(ASK_FIELD))
-                    .and_then(|value| serde_json::to_value(value).ok())
-                    .ok_or(UserInputError::MissingAnswer)?;
-                let serde_json::Value::String(answer) = answer else {
-                    return Err(UserInputError::InvalidAnswer(
-                        "the answer was not a string".to_owned(),
-                    ));
-                };
-                if !options.is_empty() && !options.contains(&answer) {
-                    return Err(UserInputError::InvalidAnswer(format!(
-                        "{answer:?} was not one of the offered options"
-                    )));
-                }
-                Ok(UserInputOutcome::Answered(answer))
-            }
+            ElicitationAction::Accept(accept) => Ok(UserInputOutcome::Answered(
+                read_question_answer(&request, accept.content.as_ref())?,
+            )),
             ElicitationAction::Decline => Ok(UserInputOutcome::Declined),
             ElicitationAction::Cancel => Ok(UserInputOutcome::Cancelled),
             _ => Err(UserInputError::RequestFailed(
@@ -1220,7 +1345,12 @@ async fn run_ask(
         // directly rather than through the turn loop.
         awaiting: Arc::new(AwaitingUser::default()),
     };
-    let text = match requester.ask(UserInputRequest { question, options }).await {
+    let request = if options.is_empty() {
+        UserInputRequest::free_text(question)
+    } else {
+        UserInputRequest::choice(question, options)
+    };
+    let text = match requester.ask(request).await {
         Ok(UserInputOutcome::Answered(value)) => format!("You answered: {value}"),
         Ok(UserInputOutcome::Declined) => "You declined to answer.".to_owned(),
         Ok(UserInputOutcome::Cancelled) => "The question was cancelled.".to_owned(),

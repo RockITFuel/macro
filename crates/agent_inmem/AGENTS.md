@@ -56,6 +56,11 @@ retains notification ACP inputs and their replies; the transcript fold separatel
 omits system input from its message projection. PresentReview, GetReview and
 DecideReview are eager internal tools in both standard and code modes.
 
+`AskUser` takes `question`, `header`, 2-4 `options` (`label`, `description`,
+`preview`; bare strings still parse), `multiSelect` and `allowOther` (default
+true) and answers `{ selected, other }`. The form schema and answer parsing
+live in `domain/agent.rs` (`question_form_schema`, `read_question_answer`).
+
 ## Checks
 
 - `cargo test -p agent_inmem` (`SQLX_OFFLINE` unset).
