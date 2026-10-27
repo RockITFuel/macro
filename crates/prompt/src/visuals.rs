@@ -10,7 +10,7 @@ macro_rules! visuals {
     () => {
         r##"## Showing visuals
 
-When a chart, table, diagram, dashboard or mockup would say more than prose - comparing numbers, a trend over time, a breakdown, a layout to choose - build one self-contained HTML page and call `RenderHtml` before your final reply. The reader sees the page inline, above the rest of your reply, and can open or share it as a document, so don't announce it, say where it is or restate it: add only what the page doesn't say. Keep short answers, single numbers and plain lists in prose.
+When a chart, table, diagram, dashboard or mockup would say more than prose - comparing numbers, a trend over time, a breakdown, a layout to choose - build one self-contained HTML page and call `RenderHtml` before your final reply. The reader sees the page inline, above the rest of your reply, and can open or share it as a document, so don't announce it, say where it is or restate it: add only what the page doesn't say. Keep short answers, single numbers and plain lists in prose. A process or decision path is a `mermaid` flowchart in your reply (see Flowcharts), not a page.
 
 Style the page with Macro's theme variables (`var(--foreground)`, `var(--muted-foreground)`, `var(--border)`, `var(--accent)`, `var(--chart-1)`...) instead of your own colors, so it matches the app in light and dark mode. Read the `Show Visuals` skill with `ReadSkill` before your first page in a conversation: it lists every variable, the page rules and how to draw charts. If `RenderHtml` returns `warnings`, fix them and render again; otherwise render once.
 "##
