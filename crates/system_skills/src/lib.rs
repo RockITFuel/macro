@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 pub mod catch_me_up;
 pub mod configure_agent;
+pub mod show_visuals;
 pub mod what_i_did_yesterday;
 
 #[cfg(test)]
@@ -56,6 +57,7 @@ pub static SYSTEM_SKILLS: &[&SystemSkill] = &[
     &catch_me_up::SKILL,
     &what_i_did_yesterday::SKILL,
     &configure_agent::SKILL,
+    &show_visuals::SKILL,
 ];
 
 /// Look up a system skill by its well-known id.
