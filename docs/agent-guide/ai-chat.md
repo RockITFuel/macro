@@ -223,7 +223,7 @@ origin: no Macro cookies, storage or APIs) behind a Content-Security-Policy
 that allows inline code and scripts from cdn.jsdelivr.net, unpkg.com and
 cdnjs.cloudflare.com, images and fonts only as `data:`/`blob:`, and no
 `fetch`, forms, frames or base URL. Clicked http(s) links open in a new tab;
-a page that navigates its frame is put back (the navigation request itself can
+a page that navigates its frame is put back, at most twice, then removed (the navigation request itself can
 still leave the browser; accepted, since pages come from Macro's own agents). The page follows the app theme
 through Macro's design tokens as CSS variables (text, surfaces, borders,
 accent, status colors, the `--chart-1`..`--chart-9` series palette from
