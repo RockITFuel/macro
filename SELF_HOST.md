@@ -111,3 +111,16 @@ redirect URI on `macro.alphamonitoring.app` and the delegated scopes in
 `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID=organizations` and
 `MICROSOFT_TOKEN_KMS_KEY_ID` (a LocalStack KMS key) on the authentication
 service. Secrets go in 1Password, vault Alpha.
+
+## Deploying
+
+- `tooling/self-host/release-luka-mini.sh` (on luka-mini) builds and pushes
+  `youriheuvel/macro-rust-services`, `macro-toolbox` and `macro-frontend`,
+  tagged with the commit.
+- `tooling/self-host/render-macro-env.py` renders 1Password "Production Macro
+  Environment" (vault Alpha) as the env file. Pipe it to the server, never write
+  it into the repo: `python3 render-macro-env.py | ssh server 'umask 077; cat > /srv/macro-deploy/macro.env'`.
+- `tooling/self-host/deploy.sh <sha> up|update|status|down` lives at
+  `/srv/macro-deploy/deploy.sh` on morgo-warsaw. The stack is instance `prod`,
+  ports 47000+ on 127.0.0.1; Traefik routes come from
+  `/etc/dokploy/traefik/dynamic/macro-self-hosted.yml`.
