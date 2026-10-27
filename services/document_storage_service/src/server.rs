@@ -2288,6 +2288,7 @@ pub async fn run() -> anyhow::Result<()> {
             pool: db.clone(),
             task_dedup_service,
             lexical_client: lexical_client.clone(),
+            sync_service_client: sync_service_client.clone(),
             creator: document_creator,
             document_permission_jwt_secret: config.document_permission_jwt.as_ref().to_string(),
             non_user_owners,

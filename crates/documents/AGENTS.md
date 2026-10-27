@@ -36,6 +36,12 @@ word docs, Illustrator/Photoshop files).
 - `src/inbound/axum_router.rs`: the HTTP surface; `axum_router/get_text.rs`
   serves `/text-content` through `src/domain/text.rs`. Native Markdown comes
   from live collaborative storage, not the legacy S3 export.
+- `axum_router/document_markdown.rs` + `src/domain/markdown_replace.rs`:
+  `GET`/`PUT /{document_id}/markdown`, exact markdown with an opaque
+  `versionId` (base64url Loro version vector). A write is a Loro update from
+  lexical-service applied through sync-service's revision-checked update, so
+  open editors get it live; `baseVersionId` turns a concurrent edit into 409,
+  without it a conflict is retried on fresh state.
 
 ## Scope
 

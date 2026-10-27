@@ -33,3 +33,6 @@ pub mod document_purge;
 
 #[cfg(feature = "axum")]
 pub mod markdown_text;
+
+#[cfg(any(feature = "axum", feature = "markdown_init"))]
+pub mod markdown_state;

@@ -147,6 +147,8 @@ struct FakeDocumentService {
     get_text_calls: Mutex<Vec<String>>,
     document_owner: Mutex<Option<Owner>>,
     copy_calls: Mutex<Vec<CreationPrincipal>>,
+    /// File type of every document; `pdf` when unset.
+    file_type: Mutex<Option<String>>,
 }
 
 impl FakeDocumentService {
@@ -235,7 +237,13 @@ impl DocumentService for FakeDocumentService {
                 .unwrap_or_else(|| {
                     Owner::from_principal_str(JWT_USER_ID).expect("test user id should be valid")
                 }),
-            file_type: Some("pdf".to_string()),
+            file_type: Some(
+                self.file_type
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or_else(|| "pdf".to_string()),
+            ),
             sub_type: None,
             branched_from_id: None,
             branched_from_version_id: None,
@@ -1001,6 +1009,10 @@ fn test_router_with(
         pool,
         task_dedup_service,
         lexical_client,
+        sync_service_client: Arc::new(SyncServiceClient::new(
+            "unused-internal-key".to_string(),
+            "http://localhost/sync".to_string(),
+        )),
         creator,
         document_permission_jwt_secret: "unused-jwt-secret".to_string(),
         non_user_owners,
@@ -1733,6 +1745,64 @@ async fn document_text_content_route_coexists_with_legacy_extracted_text_route()
         send(&merged, current_request).await,
         (StatusCode::OK, json!({"text":"Extracted PDF text"}))
     );
+}
+
+fn set_markdown_request(authenticate: Authenticate, body: Value) -> Request<Body> {
+    authenticate(
+        Request::put("/markdown-document/markdown").header("content-type", "application/json"),
+    )
+    .body(Body::from(body.to_string()))
+    .unwrap()
+}
+
+// The test router's sync-service client points at an unreachable URL, so a
+// request that reached the collaborative state would fail with a 5xx.
+
+#[tokio::test]
+async fn markdown_endpoints_reject_documents_without_collaborative_markdown() {
+    let (router, _, _, _) = test_router();
+    let read = with_jwt(Request::get("/text-document/markdown"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send_status(&router, read).await, StatusCode::BAD_REQUEST);
+    let write = set_markdown_request(with_jwt, json!({ "markdown": "# Title" }));
+    assert_eq!(send_status(&router, write).await, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn markdown_write_requires_edit_access_before_touching_state() {
+    let (router, documents, access, _) = test_router();
+    *documents.file_type.lock().unwrap() = Some("md".to_string());
+    *documents.document_owner.lock().unwrap() =
+        Some(Owner::from_principal_str("macro|different-owner@example.com").unwrap());
+    access.deny_document_access();
+    let write = set_markdown_request(with_jwt, json!({ "markdown": "# Title" }));
+    assert!(send_status(&router, write).await.is_client_error());
+    assert_eq!(
+        access.document_access_calls()[0].entity_id,
+        "markdown-document"
+    );
+}
+
+#[tokio::test]
+async fn markdown_write_rejects_a_malformed_base_version_for_users_and_team_bots() {
+    let (router, documents, _, _) = test_router_with(NonUserOwners::Enabled);
+    *documents.file_type.lock().unwrap() = Some("md".to_string());
+    for authenticate in [with_jwt as Authenticate, with_team_bot] {
+        let write = set_markdown_request(
+            authenticate,
+            json!({ "markdown": "# Title", "baseVersionId": "not base64url!" }),
+        );
+        assert_eq!(send_status(&router, write).await, StatusCode::BAD_REQUEST);
+    }
+}
+
+#[tokio::test]
+async fn markdown_write_rejects_unknown_fields() {
+    let (router, documents, _, _) = test_router();
+    *documents.file_type.lock().unwrap() = Some("md".to_string());
+    let write = set_markdown_request(with_jwt, json!({ "content": "# Title" }));
+    assert!(send_status(&router, write).await.is_client_error());
 }
 
 #[tokio::test]

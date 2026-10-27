@@ -18523,6 +18523,59 @@ export const getDocumentLocationV3Response = zod
   .describe('Location response with content lifecycle metadata.');
 
 /**
+ * @summary Read a native markdown document's markdown with its version.
+ */
+export const getDocumentMarkdownParams = zod.object({
+  document_id: zod.string().describe('Document ID'),
+});
+
+export const getDocumentMarkdownResponse = zod
+  .object({
+    markdown: zod
+      .string()
+      .describe(
+        "The document's content as markdown, without a trailing newline."
+      ),
+    versionId: zod
+      .string()
+      .describe(
+        'Opaque version of the content; pass it as `baseVersionId` to write\nonly if nobody edited the document since.'
+      ),
+  })
+  .describe("A document's markdown and the version it was read at.");
+
+/**
+ * @summary Replace a native markdown document's content with exactly the given
+markdown, as a collaborative edit that open editors receive live.
+ */
+export const setDocumentMarkdownParams = zod.object({
+  document_id: zod.string().describe('Document ID'),
+});
+
+export const setDocumentMarkdownBody = zod
+  .object({
+    baseVersionId: zod
+      .string()
+      .nullish()
+      .describe(
+        'Write only if the document is still at this version (409 otherwise).'
+      ),
+    markdown: zod.string().describe('The new content.'),
+  })
+  .describe("Replace a document's content with exactly this markdown.");
+
+export const setDocumentMarkdownResponse = zod
+  .object({
+    changed: zod
+      .boolean()
+      .describe(
+        'False when the document already held this markdown and nothing changed.'
+      ),
+    versionId: zod.string().describe('The version after the write.'),
+  })
+  .describe('The result of a markdown write.');
+
+/**
  * @summary Permanently deletes a document.
  */
 export const permanentlyDeleteDocumentParams = zod.object({
