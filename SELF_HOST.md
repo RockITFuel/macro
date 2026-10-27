@@ -103,6 +103,36 @@ HTTPS with the development CA, so skip verification) and the auth host, when
 used, to FusionAuth (`--port-base` + 5); see `Port` in
 `tooling/xtask/crates/xtask_local/src/local/instance.rs`.
 
+## Local development stack
+
+On luka-mini (no zig, so binaries come from `docker/Dockerfile.dev`):
+
+```sh
+git worktree add --detach ~/macro-build/e2e-src origin/self-host
+cd ~/macro-build/e2e-src && docker build -f docker/Dockerfile.dev --target services_bundle -t macro-rust-services:e2e .
+id=$(docker create macro-rust-services:e2e) && docker cp $id:/app/out ~/macro-build/out-$(git rev-parse --short HEAD) && docker rm $id
+printf 'ANTHROPIC_API_KEY=%s\nDEV_DANGEROUS_LOCAL_CONTAINERS=false\n' "$(op read 'op://Alpha/claude alpha luka api key/text')" > ~/macro-build/e2e.env  # umask 077
+cd ~/github/macro && just stack up --instance e2e --port-base 42000 --no-doppler \
+  --env-file ~/macro-build/e2e.env --binaries-dir ~/macro-build/out-<sha>
+```
+
+The app is `https://localhost:42009/app/`, login codes are in
+`https://localhost:42009/mailpit/`. Billing is off, so onboarding ends after the
+team step. To adopt new binaries, build into a new `out-<sha>` directory and
+run `just stack update --instance e2e --no-doppler --env-file … --binaries-dir
+<new dir>`: the same path counts as unchanged and nothing restarts. `stack up`
+wipes the instance's data; `stack update` keeps it.
+
+Bring your own agent: build `cargo build -p coding_agent_worker`, write a
+`macrod.toml` whose `[macro]` points at the instance's direct ports
+(`api_url = "http://localhost:<port-base + 26>"`, `storage_url =
+"http://localhost:<port-base + 15>"`, `web_url = "https://localhost:<port-base +
+9>/app"`), run `macrod service --config macrod.toml --agent claude-code
+--workspace <dir> --name <name>` with stdin held open, approve the printed code
+at `/app/settings/harness?pair=<code>`, add an agent "In your harness", and
+@mention it in a channel. Messages in the agent's own DM do not reach external
+runtimes yet.
+
 ## Outlook
 
 Outlook (Microsoft Graph) is built in. It needs an Entra app registration with
