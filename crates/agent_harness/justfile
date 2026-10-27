@@ -114,3 +114,21 @@ build-local force="":
     fi
     echo "building $tag (native platform; flake has x86_64-linux and aarch64-linux)"
     docker build --tag "$tag" container
+
+# Build the Cua Space variant of the local image (`MACRO_SANDBOX_RUNTIME=cua`):
+# the same image plus the `cua-spacesd` that ships next to the `cua` CLI.
+build-cua force="": build-local
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag={{image_name}}-cua:latest
+    if [ -z "{{force}}" ] && docker image inspect "$tag" >/dev/null 2>&1; then
+      echo "image $tag already exists, skipping build (pass --force to rebuild)"
+      exit 0
+    fi
+    cua="$(command -v cua)" || { echo "install the cua CLI first (https://cua.ai/docs)" >&2; exit 1; }
+    spacesd="$(dirname "$(readlink -f "$cua")")/cua-spacesd-linux-$(uname -m)"
+    [ -x "$spacesd" ] || { echo "no $spacesd next to $cua" >&2; exit 1; }
+    context="$(mktemp -d)"; trap 'rm -rf "$context"' EXIT
+    cp "$spacesd" "$context/cua-spacesd"
+    docker build --tag "$tag" --build-arg BASE={{image_name}}:latest \
+      --file container/cua.Dockerfile "$context"

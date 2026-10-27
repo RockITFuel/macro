@@ -5,7 +5,7 @@
 //! flag without something to hold both. This is that something: one enum
 //! that is a `ContainerManager` whichever arm it holds.
 //!
-//! Both arms happen to split into the same halves — every provider dials a
+//! Every arm happens to split into the same halves — every provider dials a
 //! sidecar over a websocket — so the transport needs no enum of its own, and
 //! only the manager does.
 
@@ -17,6 +17,7 @@ use crate::domain::error::Result;
 use crate::domain::model::SpawnContainer;
 use crate::domain::ports::ContainerManager;
 use crate::domain::sandbox::SandboxResizeEffect;
+use crate::outbound::cua::CuaContainerManager;
 use crate::outbound::daytona::{DaytonaContainer, DaytonaContainerManager};
 use crate::outbound::local::LocalContainerManager;
 use crate::outbound::sidecar::{SidecarSender, SidecarTransport};
@@ -28,6 +29,8 @@ pub enum HarnessContainers {
     Daytona(DaytonaContainerManager),
     /// Containers on the local Docker daemon: what a developer runs on.
     Local(LocalContainerManager),
+    /// Cua Spaces on this host (pilot).
+    Cua(CuaContainerManager),
 }
 
 /// A sandbox from either provider.
@@ -36,6 +39,8 @@ pub enum HarnessContainer {
     Daytona(DaytonaContainer),
     /// A local Docker container.
     Local(SidecarTransport),
+    /// A Cua Space.
+    Cua(SidecarTransport),
 }
 
 impl HarnessContainers {
@@ -45,6 +50,7 @@ impl HarnessContainers {
         match self {
             Self::Daytona(manager) => manager.shutdown_all().await,
             Self::Local(manager) => manager.shutdown_all().await,
+            Self::Cua(manager) => manager.shutdown_all().await,
         }
     }
 }
@@ -65,6 +71,10 @@ impl ContainerManager for HarnessContainers {
                 .spawn(command)
                 .await
                 .map(|attachment| attachment.map_transport(HarnessContainer::Local)),
+            Self::Cua(manager) => manager
+                .spawn(command)
+                .await
+                .map(|attachment| attachment.map_transport(HarnessContainer::Cua)),
         }
     }
 
@@ -72,6 +82,7 @@ impl ContainerManager for HarnessContainers {
         match self {
             Self::Daytona(manager) => manager.resize_effect(from, to),
             Self::Local(manager) => manager.resize_effect(from, to),
+            Self::Cua(manager) => manager.resize_effect(from, to),
         }
     }
 
@@ -79,6 +90,7 @@ impl ContainerManager for HarnessContainers {
         match self {
             Self::Daytona(manager) => manager.resize(session, size).await,
             Self::Local(manager) => manager.resize(session, size).await,
+            Self::Cua(manager) => manager.resize(session, size).await,
         }
     }
 
@@ -95,6 +107,10 @@ impl ContainerManager for HarnessContainers {
                 .resume(session)
                 .await
                 .map(|attachment| attachment.map_transport(HarnessContainer::Local)),
+            Self::Cua(manager) => manager
+                .resume(session)
+                .await
+                .map(|attachment| attachment.map_transport(HarnessContainer::Cua)),
         }
     }
 
@@ -102,6 +118,7 @@ impl ContainerManager for HarnessContainers {
         match self {
             Self::Daytona(manager) => manager.session_token(session).await,
             Self::Local(manager) => manager.session_token(session).await,
+            Self::Cua(manager) => manager.session_token(session).await,
         }
     }
 
@@ -109,6 +126,7 @@ impl ContainerManager for HarnessContainers {
         match self {
             Self::Daytona(manager) => manager.teardown(session).await,
             Self::Local(manager) => manager.teardown(session).await,
+            Self::Cua(manager) => manager.teardown(session).await,
         }
     }
 }
@@ -120,7 +138,7 @@ impl Transport<ToRuntimeMessage, ToServerMessage> for HarnessContainer {
     fn split(self) -> (Self::Sender, Self::Receiver) {
         match self {
             Self::Daytona(container) => container.split(),
-            Self::Local(transport) => transport.split(),
+            Self::Local(transport) | Self::Cua(transport) => transport.split(),
         }
     }
 }

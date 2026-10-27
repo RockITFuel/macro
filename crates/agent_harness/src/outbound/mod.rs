@@ -8,6 +8,8 @@ pub mod connected_apps;
 pub mod containers;
 /// Durable agent conversation turn journal.
 pub mod conversation_turns;
+/// Cua Spaces as sandboxes (pilot, `MACRO_SANDBOX_RUNTIME=cua`).
+pub mod cua;
 pub mod cursor;
 pub mod daytona;
 pub mod egress;

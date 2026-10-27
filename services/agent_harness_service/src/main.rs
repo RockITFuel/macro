@@ -67,6 +67,7 @@ use agent_harness::outbound::agent_prompt_composer::LexicalAgentPromptComposer;
 use agent_harness::outbound::channel_announcer::MessageAnnouncer;
 use agent_harness::outbound::channel_prompt_context::MessagePromptContextAdapter;
 use agent_harness::outbound::containers::HarnessContainers;
+use agent_harness::outbound::cua::{CuaContainerManager, CuaSettings};
 use agent_harness::outbound::cursor::{CursorContainerManager, PgCursorApiKeys, PostgresJournal};
 use agent_harness::outbound::daytona::{
     AnthropicApiKey as AnthropicApiKeySecret, DaytonaApiKey as DaytonaApiKeySecret,
@@ -371,8 +372,9 @@ async fn run() -> anyhow::Result<()> {
     // marks and clears it); nothing else needs to know its type.
     let pending_commands = agent_harness::domain::pending::PendingCommands::new();
 
-    // Containers: the sandbox provider (local Docker when a developer has
-    // opted in, Daytona otherwise) plus Cursor cloud agents for the `@cursor`
+    // Containers: the sandbox provider (Cua Spaces with
+    // MACRO_SANDBOX_RUNTIME=cua, local Docker when a developer has opted in,
+    // Daytona otherwise) plus Cursor cloud agents for the `@cursor`
     // bot, routed per session.
     // The Anthropic key rides into every sandbox's environment; without it the
     // runtime has no model provider at all (`container/opencode.json` enables
@@ -384,7 +386,22 @@ async fn run() -> anyhow::Result<()> {
         );
     }
     let anthropic_api_key = AnthropicApiKeySecret::new(config.anthropic_api_key.clone());
-    let sandbox = if config.dev_dangerous_local_containers {
+    let sandbox_runtime = config.macro_sandbox_runtime.trim();
+    let sandbox = if sandbox_runtime == "cua" {
+        if config.dev_dangerous_local_containers {
+            anyhow::bail!(
+                "MACRO_SANDBOX_RUNTIME=cua and DEV_DANGEROUS_LOCAL_CONTAINERS both pick a sandbox provider; set one"
+            );
+        }
+        HarnessContainers::Cua(CuaContainerManager::new(CuaSettings {
+            binary: config.cua_binary.clone(),
+            image: config.cua_sandbox_image.clone(),
+            runtime: config.cua_sandbox_runtime.clone(),
+            anthropic_api_key: anthropic_api_key.clone(),
+        }))
+    } else if !sandbox_runtime.is_empty() {
+        anyhow::bail!("unknown MACRO_SANDBOX_RUNTIME {sandbox_runtime:?}; expected `cua` or unset");
+    } else if config.dev_dangerous_local_containers {
         if !matches!(config.environment, Environment::Local) {
             anyhow::bail!("DEV_DANGEROUS_LOCAL_CONTAINERS is only allowed when ENVIRONMENT=local");
         }

@@ -90,6 +90,31 @@ A public stack runs no local agent sandboxes: `DEV_DANGEROUS_LOCAL_CONTAINERS`
 is `false`, the harness gets no Docker socket and no sandbox image is built.
 `@coder` sessions need `DAYTONA_API_KEY` instead.
 
+### Cua Spaces (pilot)
+
+`MACRO_SANDBOX_RUNTIME=cua` runs each `@coder` session in a fresh
+[Cua](https://github.com/trycua/cua) Space on the harness's own host instead of
+Daytona. Not for production yet:
+
+- Install the CLI user-level (`curl -fsSL https://cua.ai/install.sh -o install.sh`,
+  read it, `sh install.sh --cli-only --no-onboarding --no-modify-path --yes`),
+  no account needed. Turn off telemetry and warm pools:
+  `cua config set telemetry.enabled off`, `cua config set pool.auto off`.
+- Build the image: `just -f crates/agent_harness/justfile build-cua`
+  (`macro-agent-harness-cua:latest`, the sandbox image plus `cua-spacesd`).
+- The harness must share the host's network namespace: Cua publishes a Space's
+  ports, and `cua-spacesd`, on `127.0.0.1` only and refuses other addresses.
+  Point `OVERRIDE_AGENT_HARNESS_EGRESS_URL` at an address Spaces reach the
+  harness on (`http://172.17.0.1:8102` for container Spaces).
+- `CUA_BINARY`, `CUA_SANDBOX_IMAGE` and `CUA_SANDBOX_RUNTIME` (`runc` default;
+  `gvisor` and `firecracker` need root to install) tune it; `CUA_DAEMON` and
+  `CUA_HOME` pass through to the CLI.
+- Isolation is no better than local Docker yet: a container Space reaches every
+  port the host publishes on `0.0.0.0`, the host's SSH and its Tailscale peers.
+  Cua's egress allowlists (`cua spaces egress`) need nftables written through a
+  privileged helper container (containers) or `passt` (QEMU VMs); neither works
+  on luka-mini without root.
+
 Our values: `smtp.mx.cloudflare.net`, `SSL`, port 465, sender
 `noreply@alphamonitoring.app` named `Macro`, domains
 `d2d.cloud,alphamonitoring.app,wendythefoodscientist.com`.

@@ -16,6 +16,13 @@ between the sandbox and the rest of the product.
   transport that speaks `agent_runtime_protocol`.
 - `src/outbound/containers.rs` / `managed_containers.rs`: container
   provisioning.
+- Sandbox providers behind `HarnessContainers`: `outbound/daytona/`,
+  `outbound/local/` (`DEV_DANGEROUS_LOCAL_CONTAINERS`) and `outbound/cua/`
+  (Cua Spaces, `MACRO_SANDBOX_RUNTIME=cua`, a pilot). The Cua provider drives
+  the `cua` CLI, needs the harness in the host's network namespace (Cua
+  publishes on loopback only) and an image with `cua-spacesd`
+  (`just build-cua`); it writes the sandbox environment into the Space over
+  stdin instead of passing secrets as arguments.
 - `src/domain/trigger_router.rs`: routes an incoming trigger to a session.
 - `src/inbound/kafka.rs`: trigger ingestion.
 
