@@ -59,11 +59,14 @@ public instance. Unset, it is the localhost development stack.
 
 | Variable | Effect |
 | --- | --- |
-| `MACRO_PUBLIC_ORIGIN` | App origin (`https://macro.alphamonitoring.app`) for `FRONTEND_ORIGIN`, `APP_BASE_URL`, the public file/MCP/storage URLs and the FusionAuth redirects. The auth service is reached at `<origin>/auth`. Also drops the Mailpit route, the proxy's wildcard CORS and the auth service's login-code shortcuts, and refuses to start while a secret below still has its development value. |
+| `MACRO_PUBLIC_ORIGIN` | App origin (`https://macro.alphamonitoring.app`) for `FRONTEND_ORIGIN`, `APP_BASE_URL`, the public file/MCP/storage URLs and the FusionAuth redirects. The auth service is reached at `<origin>/auth`. Also drops the Mailpit route, the proxy's wildcard CORS and the auth service's login-code shortcuts, makes the session cookies `SameSite=Lax`, and refuses to start while a secret below still has its development value. |
 | `MACRO_FUSIONAUTH_PUBLIC_URL` | Browser URL of FusionAuth (`FUSIONAUTH_PUBLIC_URL`), only used by OAuth sign-in and connect flows. |
 | `MACRO_BIND_ADDRESS` | Publish every port on this address only (`127.0.0.1`). Needs `--instance`. |
 | `MACRO_POSTGRES_PASSWORD`, `MACRO_FUSIONAUTH_DB_PASSWORD` | Database passwords. Postgres applies them only to an empty volume. |
 | `MACRO_FUSIONAUTH_ADMIN_PASSWORD` | Password of the FusionAuth admin `admin@macro.com`. |
+| `MACRO_SMTP_HOST`, `MACRO_SMTP_PORT`, `MACRO_SMTP_SECURITY`, `MACRO_SMTP_USERNAME`, `MACRO_SMTP_PASSWORD` | SMTP server for FusionAuth's login codes and the auth service's mail (invites, verification). `SECURITY` is `SSL` (implicit TLS, default port 465), `TLS` (STARTTLS, 587) or `NONE`. Unset, mail goes to Mailpit. Required with `MACRO_PUBLIC_ORIGIN`. |
+| `MACRO_MAIL_FROM`, `MACRO_MAIL_FROM_NAME` | Sender of all that mail; it replaces the services' own `auth@macro.com`. Required with `MACRO_PUBLIC_ORIGIN`. |
+| `MACRO_SIGNUP_ALLOWED_DOMAINS` | Comma-separated email domains that may create an account, by any sign-in method. Existing users keep signing in; invited users from other domains are refused. |
 
 Secrets go in the same env file and reach the services and the kickstart
 alike: `INTERNAL_AUTH_KEY`, `FUSIONAUTH_API_KEY`, `FUSIONAUTH_CLIENT_SECRET_KEY`,
@@ -73,6 +76,16 @@ alike: `INTERNAL_AUTH_KEY`, `FUSIONAUTH_API_KEY`, `FUSIONAUTH_CLIENT_SECRET_KEY`
 bytes) and `MCP_CREDENTIALS_KEY_SECRET_NAME` (base64 of 32 bytes). Avoid `$` in
 values: compose interpolates them. Changing a kickstart secret re-inits
 FusionAuth on the next `stack up`.
+
+Our values: `smtp.mx.cloudflare.net`, `SSL`, port 465, sender
+`noreply@alphamonitoring.app` named `Macro`, domains
+`d2d.cloud,alphamonitoring.app,wendythefoodscientist.com`.
+
+With a real `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` the kickstart creates
+the `github` identity provider and the bundle shows "Continue with GitHub".
+The GitHub OAuth app's callback is FusionAuth's
+`<MACRO_FUSIONAUTH_PUBLIC_URL>/oauth2/callback`, so the auth host must be
+routed. A GitHub account without a public email cannot sign up.
 
 Traefik routes the app origin to the instance's proxy port (`--port-base` + 9,
 HTTPS with the development CA, so skip verification) and the auth host, when
