@@ -32,7 +32,9 @@
 **/target
 **/dist
 **/build
-!crates/ai_engine/src/build
+# Rust module directories named build/ are source, not output.
+!**/src/build
+!**/src/**/build
 **/.wrangler
 **/test-results
 **/playwright-report
