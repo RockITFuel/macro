@@ -226,6 +226,9 @@ async fn run(
             ),
         ),
     ))
+    .with_work_chain(std::sync::Arc::new(
+        agent_session::outbound::work_chain::PgWorkChain::new(pool.clone()),
+    ))
     .with_admission(admission);
     let channel_types = ChannelRepoTypeLookup::new(PgChannelsRepo::new(pool.clone()));
     let publisher = MacroEventBrokerService::new(

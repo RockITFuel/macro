@@ -2,6 +2,7 @@ use super::*;
 
 #[cfg(feature = "admission")]
 mod admission;
+mod bot_chain;
 mod call;
 mod task_assignment;
 

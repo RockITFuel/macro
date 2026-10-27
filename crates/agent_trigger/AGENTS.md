@@ -47,6 +47,10 @@ session that results.
 
 ## Gotchas
 
+- A bot's post reaches only bots it explicitly mentions, and only with a work
+  chain (`with_work_chain`): the session acts for the post's `triggered_by`
+  user, starts one hop after the posting bot's work, and is recorded as a
+  chain link. Conversations and implicit replies stay human-only.
 - A new trigger variant must also be taught to `crates/webhook` ingestion
   and the SSE fan-out, or it will be silently dropped end to end.
 

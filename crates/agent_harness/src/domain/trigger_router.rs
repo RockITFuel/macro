@@ -34,7 +34,8 @@ pub enum Skipped {
     /// The event is another deployment's to act on: an open for a bot whose
     /// runtime opens its own sessions, or managed traffic that is not ours.
     ForeignBot,
-    /// The sender is not a user, so there is nobody to own the session.
+    /// The sender is neither a user nor a bot acting for one, so there is
+    /// nobody to own the session.
     NotFromUser,
     /// An event shape this harness does not recognise yet - the trigger's
     /// vocabulary is non-exhaustive on purpose, and unknown shapes are
@@ -127,11 +128,9 @@ pub fn route_agent_trigger(
             let Some(runtime) = runtime.filter(|runtime| runtime.kind.is_managed()) else {
                 return Err(Skipped::ForeignBot);
             };
-            let sender = message
-                .sender
-                .as_user()
-                .cloned()
-                .ok_or(Skipped::NotFromUser)?;
+            // A bot's post opens a session for the user it acted for; the
+            // trigger only lets one through within its chain limits.
+            let sender = message.acting_user().ok_or(Skipped::NotFromUser)?;
             Ok(RoutedTrigger::Command(
                 AgentSessionId::new(),
                 HarnessCommand::Open(OpenSession {
@@ -163,6 +162,7 @@ pub fn route_agent_trigger(
             else {
                 return Err(Skipped::Unrecognized);
             };
+            let acting_user = message.acting_user();
             let origin = AnnounceOrigin {
                 reply_placement: Default::default(),
                 reuse_origin_message: false,
@@ -183,17 +183,13 @@ pub fn route_agent_trigger(
                                 message.content,
                                 links.prompt_attachments(&message.attachments),
                             ),
-                            message.sender.as_user().cloned(),
+                            acting_user,
                             Some(origin),
                         )
                     }),
                 ));
             }
-            let sender = message
-                .sender
-                .as_user()
-                .cloned()
-                .ok_or(Skipped::NotFromUser)?;
+            let sender = acting_user.ok_or(Skipped::NotFromUser)?;
             Ok(RoutedTrigger::Announce(
                 session_id,
                 AnnouncePrompt {

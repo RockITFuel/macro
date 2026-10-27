@@ -149,7 +149,7 @@ fn access(
 
 fn discussion(assignment: &TaskAssignment) -> messages::domain::models::Message {
     messages::domain::models::Message {
-        id: discussion_id(assignment.event_id, BotId::TEST_A),
+        id: bot_scoped_id(assignment.event_id, BotId::TEST_A),
         parent: assignment.parent.clone(),
         thread_id: None,
         sender_id: channel_sender::ChannelSender::new_from_bot(BotId::TEST_A),
@@ -172,7 +172,7 @@ fn discussion(assignment: &TaskAssignment) -> messages::domain::models::Message 
 async fn opens_one_bot_response_without_the_private_prompt() {
     use messages::domain::api::MockMessageCommands;
     let assignment = TaskAssignment::from_update(Uuid::now_v7(), &update()).unwrap();
-    let event_id = discussion_id(assignment.event_id, BotId::TEST_A);
+    let event_id = bot_scoped_id(assignment.event_id, BotId::TEST_A);
     let mut commands = MockMessageCommands::new();
     let message = discussion(&assignment);
     let expected = message.clone();
@@ -193,7 +193,7 @@ async fn opens_one_bot_response_without_the_private_prompt() {
     let posted = assignment_discussion(
         &assignment,
         BotId::TEST_A,
-        discussion_id(assignment.event_id, BotId::TEST_A),
+        bot_scoped_id(assignment.event_id, BotId::TEST_A),
         access(&assignment),
         &commands,
     )
@@ -218,14 +218,14 @@ async fn a_replayed_assignment_reuses_its_persisted_discussion() {
     let posted = assignment_discussion(
         &assignment,
         BotId::TEST_A,
-        discussion_id(assignment.event_id, BotId::TEST_A),
+        bot_scoped_id(assignment.event_id, BotId::TEST_A),
         access(&assignment),
         &commands,
     )
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(posted.id, discussion_id(assignment.event_id, BotId::TEST_A));
+    assert_eq!(posted.id, bot_scoped_id(assignment.event_id, BotId::TEST_A));
 }
 
 #[tokio::test]
@@ -253,7 +253,7 @@ async fn deleted_or_unrelated_discussions_cannot_start_a_session() {
             assignment_discussion(
                 &assignment,
                 BotId::TEST_A,
-                discussion_id(assignment.event_id, BotId::TEST_A),
+                bot_scoped_id(assignment.event_id, BotId::TEST_A),
                 access(&assignment),
                 &commands
             )
@@ -277,7 +277,7 @@ async fn a_discussion_failure_does_not_yield_an_opening_message() {
         assignment_discussion(
             &assignment,
             BotId::TEST_A,
-            discussion_id(assignment.event_id, BotId::TEST_A),
+            bot_scoped_id(assignment.event_id, BotId::TEST_A),
             access(&assignment),
             &commands
         )
@@ -362,7 +362,7 @@ async fn authorized_assignment_publishes_the_task_brief_for_toolless_runtimes() 
             Box::pin(async { Ok(Some(invocation)) })
         });
     let mut sessions = MockAgentSessionRepo::new();
-    let event_id = discussion_id(assignment.event_id, bot_id::CODEX_BOT_ID);
+    let event_id = bot_scoped_id(assignment.event_id, bot_id::CODEX_BOT_ID);
     sessions
         .expect_find_for_thread()
         .once()
@@ -465,10 +465,10 @@ async fn authorized_assignment_publishes_the_task_brief_for_toolless_runtimes() 
 #[test]
 fn assignment_response_ids_are_stable_distinct_uuid_v7s() {
     let event = Uuid::now_v7();
-    let root = discussion_id(event, BotId::TEST_A);
-    assert_eq!(root, discussion_id(event, BotId::TEST_A));
-    assert_ne!(root, discussion_id(event, BotId::TEST_B));
-    assert_ne!(root, discussion_id(Uuid::now_v7(), BotId::TEST_A));
+    let root = bot_scoped_id(event, BotId::TEST_A);
+    assert_eq!(root, bot_scoped_id(event, BotId::TEST_A));
+    assert_ne!(root, bot_scoped_id(event, BotId::TEST_B));
+    assert_ne!(root, bot_scoped_id(Uuid::now_v7(), BotId::TEST_A));
     assert_eq!(root.get_version_num(), 7);
     assert_eq!(&root.as_bytes()[..6], &event.as_bytes()[..6]);
 }
