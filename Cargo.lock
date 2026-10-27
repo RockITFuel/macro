@@ -593,6 +593,7 @@ dependencies = [
  "lazy_static",
  "lexical_client",
  "lexical_mention_extractor",
+ "local_kms",
  "log",
  "lru 0.16.4",
  "macro_auth",
@@ -2168,6 +2169,7 @@ dependencies = [
  "initiative",
  "jsonwebtoken 10.3.0",
  "last_online_tracker",
+ "local_kms",
  "loops_client",
  "macro_auth",
  "macro_authorization",
@@ -4523,6 +4525,7 @@ dependencies = [
  "aws-sdk-kms",
  "chrono",
  "codex_cloud_agents",
+ "local_kms",
  "macro_db_migrator",
  "macro_user_id",
  "rootcause",
@@ -5599,6 +5602,7 @@ dependencies = [
  "async-trait",
  "aws-sdk-kms",
  "chrono",
+ "local_kms",
  "macro_db_migrator",
  "sqlx",
  "thiserror 2.0.18",
@@ -11658,6 +11662,19 @@ dependencies = [
  "serde_json",
  "url",
  "workspace-hack",
+]
+
+[[package]]
+name = "local_kms"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "base64 0.22.1",
+ "macro_env_var",
+ "serde_json",
+ "thiserror 2.0.18",
+ "workspace-hack",
+ "zeroize",
 ]
 
 [[package]]
@@ -22707,6 +22724,7 @@ dependencies = [
  "indoc",
  "jsonwebtoken 10.3.0",
  "libc",
+ "local_kms",
  "macro_aws_config",
  "macro_env_var",
  "macro_event_topics",

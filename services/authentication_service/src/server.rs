@@ -117,14 +117,22 @@ pub async fn run() -> anyhow::Result<()> {
     let gtm_invite_config = config
         .gtm_invite_config()
         .context("invalid GTM invite link configuration")?;
+    // Local and self-hosted stacks encrypt with their own key: LocalStack's
+    // KMS keys do not survive a restart, and with them every ciphertext.
+    let local_kms = local_kms::LocalKms::from_env().context("invalid LOCAL_ENCRYPTION_KEY")?;
     let microsoft_credentials = config
-        .microsoft_credentials()
+        .microsoft_credentials(local_kms.is_some())
         .context("invalid Microsoft OAuth configuration")?;
     let microsoft_token_cipher = microsoft_credentials.as_ref().map(|credentials| {
-        Arc::new(EnvelopeMicrosoftTokenCipher::new(KmsDataKeyProvider::new(
-            aws_sdk_kms::Client::new(&aws_config),
-            credentials.token_kms_key_id.clone(),
-        ))) as Arc<dyn MicrosoftTokenCipher>
+        match (&local_kms, &credentials.token_kms_key_id) {
+            (Some(local), _) => Arc::new(EnvelopeMicrosoftTokenCipher::new(local.clone()))
+                as Arc<dyn MicrosoftTokenCipher>,
+            (None, key_id) => Arc::new(EnvelopeMicrosoftTokenCipher::new(KmsDataKeyProvider::new(
+                aws_sdk_kms::Client::new(&aws_config),
+                // `microsoft_credentials` requires a key id without a local key.
+                key_id.clone().unwrap_or_default(),
+            ))) as Arc<dyn MicrosoftTokenCipher>,
+        }
     });
 
     // A separate KMS key from the Microsoft one by design: sharing it would
@@ -132,10 +140,13 @@ pub async fn run() -> anyhow::Result<()> {
     // everyone's mailbox credentials.
     // Agents' own API keys share it: they are read by the same agent harness
     // and protected by the same IAM grants.
-    let cursor_kms = cursor_api_key::cipher::AwsKmsCiphertexts::new(
-        aws_sdk_kms::Client::new(&aws_config),
-        config.cursor_api_key_kms_key_id()?,
-    );
+    let cursor_kms_key_id = config.cursor_api_key_kms_key_id()?;
+    let cursor_kms = cursor_api_key::cipher::KmsOrLocal::choose(local_kms.as_ref(), || {
+        cursor_api_key::cipher::AwsKmsCiphertexts::new(
+            aws_sdk_kms::Client::new(&aws_config),
+            cursor_kms_key_id,
+        )
+    });
     let cursor_api_key_cipher = Arc::new(cursor_api_key::cipher::KmsCursorApiKeyCipher::new(
         cursor_kms.clone(),
     )) as Arc<dyn cursor_api_key::cipher::CursorApiKeyCipher>;
@@ -521,11 +532,18 @@ pub async fn run() -> anyhow::Result<()> {
         config: gtm_invite_config,
     };
 
-    let codex_connection = if let Some(key_id) = config.codex_oauth_kms_key_id() {
-        let cipher = Arc::new(codex_connection::outbound::cipher::EnvelopeCipher::new(
+    let codex_cipher = match (&local_kms, config.codex_oauth_kms_key_id()) {
+        (Some(local), _) => Some(codex_connection::outbound::cipher::EnvelopeCipher::local(
+            local.clone(),
+        )),
+        (None, Some(key_id)) => Some(codex_connection::outbound::cipher::EnvelopeCipher::new(
             aws_sdk_kms::Client::new(&aws_config),
             key_id,
-        )?);
+        )?),
+        (None, None) => None,
+    };
+    let codex_connection = if let Some(cipher) = codex_cipher {
+        let cipher = Arc::new(cipher);
         let repository = Arc::new(
             codex_connection::outbound::postgres::PostgresRepository::new(db.clone(), cipher),
         );

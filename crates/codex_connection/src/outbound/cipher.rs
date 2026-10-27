@@ -29,6 +29,15 @@ impl EnvelopeCipher {
         })
     }
 }
+impl EnvelopeCipher {
+    /// Wrap data keys with the local key of a local or self-hosted stack
+    /// instead of a KMS key.
+    pub fn local(kms: local_kms::LocalKms) -> Self {
+        Self {
+            keys: Box::new(kms),
+        }
+    }
+}
 fn context(owner: &str) -> HashMap<String, String> {
     HashMap::from([
         ("purpose".into(), PURPOSE.into()),
@@ -182,6 +191,29 @@ impl DataKeys for KmsDataKeys {
                 .ok_or(ConnectionError::Encryption)?
                 .into_inner(),
         ))
+    }
+}
+
+#[async_trait]
+impl DataKeys for local_kms::LocalKms {
+    async fn generate(&self, context: HashMap<String, String>) -> Result<DataKey, ConnectionError> {
+        let (plaintext, encrypted) = self
+            .generate_data_key(&context)
+            .map_err(|_| ConnectionError::Encryption)?;
+        Ok(DataKey {
+            plaintext,
+            encrypted,
+            key_id: local_kms::KEY_ID.to_owned(),
+        })
+    }
+    async fn decrypt(
+        &self,
+        key_id: &str,
+        ciphertext: &[u8],
+        context: HashMap<String, String>,
+    ) -> Result<Zeroizing<Vec<u8>>, ConnectionError> {
+        local_kms::LocalKms::decrypt(self, key_id, ciphertext, &context)
+            .map_err(|_| ConnectionError::Encryption)
     }
 }
 

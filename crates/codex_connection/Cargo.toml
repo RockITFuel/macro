@@ -10,6 +10,7 @@ async-trait = { workspace = true }
 aws-sdk-kms = { workspace = true }
 chrono = { workspace = true }
 codex_cloud_agents = { path = "../codex_cloud_agents" }
+local_kms = { path = "../local_kms" }
 macro_user_id = { path = "../macro_user_id" }
 rootcause = { workspace = true }
 serde = { workspace = true }

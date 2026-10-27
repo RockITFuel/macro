@@ -44,6 +44,10 @@ pub const MAIL_FROM: &str = "MACRO_MAIL_FROM";
 pub const MAIL_FROM_NAME: &str = "MACRO_MAIL_FROM_NAME";
 /// Comma-separated email domains allowed to create an account.
 pub const SIGNUP_ALLOWED_DOMAINS: &str = "MACRO_SIGNUP_ALLOWED_DOMAINS";
+/// Base64 of 32 random bytes: the services' `LOCAL_ENCRYPTION_KEY`, used
+/// instead of LocalStack KMS (whose keys a restart loses). Required on a
+/// public stack; losing it makes stored credentials unreadable.
+pub const LOCAL_ENCRYPTION_KEY: &str = "MACRO_LOCAL_ENCRYPTION_KEY";
 /// A prebuilt static bundle (`stack build-frontend`) to serve instead of
 /// building one with bun.
 pub const FRONTEND_BUNDLE: &str = "MACRO_FRONTEND_BUNDLE";
@@ -57,7 +61,7 @@ pub const FUSIONAUTH_API_KEY: &str = "FUSIONAUTH_API_KEY";
 
 /// The settings that exist only here; the two keys above are written by
 /// [`super::local_env::LocalEnv`] under each of their names.
-const KEYS: [&str; 15] = [
+const KEYS: [&str; 16] = [
     PUBLIC_ORIGIN,
     FUSIONAUTH_PUBLIC_URL,
     BIND_ADDRESS,
@@ -73,6 +77,7 @@ const KEYS: [&str; 15] = [
     MAIL_FROM_NAME,
     SIGNUP_ALLOWED_DOMAINS,
     FRONTEND_BUNDLE,
+    LOCAL_ENCRYPTION_KEY,
 ];
 
 /// Today's Postgres password, baked into `docker/docker-compose-databases.yml`.
@@ -98,6 +103,7 @@ pub struct SelfHost {
     pub mail_from_name: Option<String>,
     pub signup_allowed_domains: Option<String>,
     pub frontend_bundle: Option<String>,
+    pub local_encryption_key: Option<String>,
 }
 
 /// A configured SMTP server, as FusionAuth and the services both use it.
@@ -135,6 +141,7 @@ impl SelfHost {
             mail_from_name: get(MAIL_FROM_NAME),
             signup_allowed_domains: get(SIGNUP_ALLOWED_DOMAINS),
             frontend_bundle: get(FRONTEND_BUNDLE),
+            local_encryption_key: get(LOCAL_ENCRYPTION_KEY),
         }
     }
 
@@ -243,6 +250,7 @@ impl SelfHost {
             &self.mail_from_name,
             &self.signup_allowed_domains,
             &self.frontend_bundle,
+            &self.local_encryption_key,
         ];
         for (key, value) in KEYS.into_iter().zip(values) {
             if let Some(value) = value {
@@ -260,6 +268,10 @@ impl SelfHost {
 pub fn check(env: &BTreeMap<String, String>, fixtures: &BTreeMap<String, String>) -> Result<()> {
     let self_host = SelfHost::from_env(env);
     let smtp = self_host.smtp()?;
+    if let Some(key) = &self_host.local_encryption_key {
+        local_kms::LocalKms::from_base64(key)
+            .map_err(|_| anyhow::anyhow!("{LOCAL_ENCRYPTION_KEY} must be base64 of 32 bytes"))?;
+    }
     if !self_host.is_public() {
         return Ok(());
     }
@@ -277,6 +289,12 @@ pub fn check(env: &BTreeMap<String, String>, fixtures: &BTreeMap<String, String>
             "{PUBLIC_ORIGIN} is set but mail would only reach the local Mailpit; \
              set {SMTP_HOST}, {SMTP_PORT}, {SMTP_SECURITY}, {SMTP_USERNAME}, {SMTP_PASSWORD} \
              and {MAIL_FROM} in --env-file"
+        );
+    }
+    if self_host.local_encryption_key.is_none() {
+        bail!(
+            "{PUBLIC_ORIGIN} is set but {LOCAL_ENCRYPTION_KEY} is not: LocalStack's KMS keys \
+             do not survive a restart. Set it to `openssl rand -base64 32` and keep it safe"
         );
     }
     let mut fixed: Vec<&str> = PUBLIC_SECRETS

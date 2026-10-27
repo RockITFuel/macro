@@ -10,6 +10,8 @@ name = "xtask_local"
 path = "src/main.rs"
 
 [dependencies]
+# Validates MACRO_LOCAL_ENCRYPTION_KEY the way the services parse it.
+local_kms = { path = "../../../../crates/local_kms" }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 # Local/dev orchestration. These deps reuse the workspace-pinned versions so

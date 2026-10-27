@@ -153,7 +153,7 @@ pub(crate) type AuthorizationService = MacroAuthorizationServiceImpl<MacroAuthJw
 
 pub(crate) type AgentApiKeysType = agent_api_keys::domain::AgentKeyService<
     agent_api_keys::outbound::PgAgentKeyRepo,
-    agent_api_keys::outbound::KmsAgentKeyCipher<cursor_api_key::cipher::AwsKmsCiphertexts>,
+    agent_api_keys::outbound::KmsAgentKeyCipher<cursor_api_key::cipher::KmsOrLocal>,
     agent_api_keys::outbound::EntitlementKeyPlans<
         ai_billing::outbound::RolesTeamsEntitlementSource<
             UserRolesAndPermissionsServiceImpl<MacroDB, MacroDB>,

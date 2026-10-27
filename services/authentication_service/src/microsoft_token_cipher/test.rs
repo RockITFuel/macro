@@ -200,3 +200,20 @@ impl FakeDataKeyProvider {
             .push(encryption_context);
     }
 }
+
+#[tokio::test]
+async fn the_local_key_replaces_kms_for_refresh_tokens() {
+    let kms =
+        local_kms::LocalKms::from_base64("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=").unwrap();
+    let cipher = EnvelopeMicrosoftTokenCipher::new(kms);
+    let envelope = cipher.encrypt(OWNER, MAILBOX, token()).await.unwrap();
+    assert_eq!(envelope.kms_key_id, local_kms::KEY_ID);
+    let plaintext = cipher.decrypt(OWNER, MAILBOX, &envelope).await.unwrap();
+    assert_eq!(plaintext.as_str(), REFRESH_TOKEN);
+    assert!(
+        cipher
+            .decrypt("someone-else", MAILBOX, &envelope)
+            .await
+            .is_err()
+    );
+}

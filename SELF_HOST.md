@@ -66,6 +66,7 @@ public instance. Unset, it is the localhost development stack.
 | `MACRO_FUSIONAUTH_ADMIN_PASSWORD` | Password of the FusionAuth admin `admin@macro.com`. |
 | `MACRO_SMTP_HOST`, `MACRO_SMTP_PORT`, `MACRO_SMTP_SECURITY`, `MACRO_SMTP_USERNAME`, `MACRO_SMTP_PASSWORD` | SMTP server for FusionAuth's login codes and the auth service's mail (invites, verification). `SECURITY` is `SSL` (implicit TLS, default port 465), `TLS` (STARTTLS, 587) or `NONE`. Unset, mail goes to Mailpit. Required with `MACRO_PUBLIC_ORIGIN`. |
 | `MACRO_MAIL_FROM`, `MACRO_MAIL_FROM_NAME` | Sender of all that mail; it replaces the services' own `auth@macro.com`. Required with `MACRO_PUBLIC_ORIGIN`. |
+| `MACRO_LOCAL_ENCRYPTION_KEY` | Base64 of 32 bytes (`openssl rand -base64 32`). The services encrypt Cursor and agent API keys, Codex OAuth state and Microsoft refresh tokens with it (AES-256-GCM) instead of LocalStack KMS, whose keys a restart loses. Required with `MACRO_PUBLIC_ORIGIN`. Keep it in 1Password: losing or changing it makes those stored credentials unreadable, and credentials stored under KMS before it was set cannot be read with it. |
 | `MACRO_FRONTEND_BUNDLE` | Directory with a prebuilt static bundle (`index.html` at its root) that `stack up` and `stack update --frontend` serve instead of building with bun. |
 | `MACRO_SIGNUP_ALLOWED_DOMAINS` | Comma-separated email domains that may create an account, by any sign-in method. Existing users keep signing in; invited users from other domains are refused. |
 
@@ -118,8 +119,8 @@ Restore a dump with `docker exec -i macro-prod-postgres-1 pg_restore -U user
 --clean --if-exists -d macrodb < macrodb-<time>.dump` (FusionAuth: container
 `macro-prod-db-1`, role `postgres`, database `fusionauth`). `start` re-creates
 LocalStack's queues, tables and buckets, which do not survive a restart: S3
-objects and the KMS keys are lost with it until R2 and the local encryption
-key are in. `update` refuses an instance with data but no `stack.json` instead
+objects are lost with it until R2 is in, while stored credentials survive with
+`MACRO_LOCAL_ENCRYPTION_KEY`. `update` refuses an instance with data but no `stack.json` instead
 of bringing it up from scratch. Public stacks restart their containers by
 themselves (`unless-stopped`). Later commands reuse the `--port-base` recorded
 at `up`.

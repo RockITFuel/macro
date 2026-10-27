@@ -119,7 +119,7 @@ use coding_agent::PgCodingAgentSource;
 use config::{Config, Environment};
 use connection_gateway_client::ConnectionGatewayClient;
 use containers::{InMemRuntime, RoutedContainers};
-use cursor_api_key::cipher::{AwsKmsCiphertexts, KmsCursorApiKeyCipher};
+use cursor_api_key::cipher::{AwsKmsCiphertexts, KmsCursorApiKeyCipher, KmsOrLocal};
 use cursor_cloud_agents::api::cursor_api_base_url;
 use entity_registry::OwnerGrantPolicy;
 use entity_registry_db_utils::OwnedEntityRegistrar;
@@ -791,11 +791,15 @@ async fn run() -> anyhow::Result<()> {
     // role already decrypts with. Decrypt-only for the same reason as Cursor
     // keys: saving them is the authentication service's job. Only agents
     // whose owner is on a paid plan run on them.
+    // Local and self-hosted stacks encrypt with their own key instead of KMS
+    // (LocalStack's keys do not survive a restart, and with them every row).
+    let local_kms = local_kms::LocalKms::from_env().context("invalid LOCAL_ENCRYPTION_KEY")?;
     let agent_keys: Arc<dyn agent_api_keys::domain::AgentKeys> =
         Arc::new(agent_api_keys::domain::AgentKeyService::new(
             agent_api_keys::outbound::PgAgentKeyRepo::new(pool.clone()),
-            agent_api_keys::outbound::KmsAgentKeyCipher::new(AwsKmsCiphertexts::decrypting(
-                aws_sdk_kms::Client::new(&aws_config),
+            agent_api_keys::outbound::KmsAgentKeyCipher::new(KmsOrLocal::choose(
+                local_kms.as_ref(),
+                || AwsKmsCiphertexts::decrypting(aws_sdk_kms::Client::new(&aws_config)),
             )),
             agent_api_keys::outbound::EntitlementKeyPlans::new(
                 ai_billing::composition::pg_entitlement_source(pool.clone()),
@@ -833,9 +837,9 @@ async fn run() -> anyhow::Result<()> {
     // harness whose IAM role grants more than it uses.
     let cursor_keys = PgCursorApiKeys::new(
         pool.clone(),
-        KmsCursorApiKeyCipher::new(AwsKmsCiphertexts::decrypting(aws_sdk_kms::Client::new(
-            &aws_config,
-        ))),
+        KmsCursorApiKeyCipher::new(KmsOrLocal::choose(local_kms.as_ref(), || {
+            AwsKmsCiphertexts::decrypting(aws_sdk_kms::Client::new(&aws_config))
+        })),
     );
     // Which repositories a session may work on is the owner's question, not
     // the deployment's: the same App credentials the egress proxy mints tokens
@@ -895,27 +899,34 @@ async fn run() -> anyhow::Result<()> {
     .with_admission(admission.clone())
     .with_pull_requests(session_pull_requests.clone())
     .with_working_branches(session_working_branches);
-    let codex_connections: Option<Arc<dyn codex_connection::domain::ConnectionService>> = config
-        .codex_oauth_kms_key_id()
-        .map(|key| {
-            let cipher = codex_connection::outbound::cipher::EnvelopeCipher::new(
-                aws_sdk_kms::Client::new(&aws_config),
-                key,
-            )?;
-            let repository = codex_connection::outbound::postgres::PostgresRepository::new(
-                pool.clone(),
-                Arc::new(cipher),
-            );
-            let provider = codex_cloud_agents::outbound::openai::OpenAi::new()
-                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-            Ok::<Arc<dyn codex_connection::domain::ConnectionService>, anyhow::Error>(Arc::new(
-                codex_connection::domain::ConnectionServiceImpl::new(
-                    Arc::new(repository),
-                    provider,
-                ),
-            ))
-        })
-        .transpose()?;
+    let codex_cipher = match (&local_kms, config.codex_oauth_kms_key_id()) {
+        (Some(local), _) => Some(Ok(
+            codex_connection::outbound::cipher::EnvelopeCipher::local(local.clone()),
+        )),
+        (None, Some(key)) => Some(codex_connection::outbound::cipher::EnvelopeCipher::new(
+            aws_sdk_kms::Client::new(&aws_config),
+            key,
+        )),
+        (None, None) => None,
+    };
+    let codex_connections: Option<Arc<dyn codex_connection::domain::ConnectionService>> =
+        codex_cipher
+            .map(|cipher| {
+                let cipher = cipher?;
+                let repository = codex_connection::outbound::postgres::PostgresRepository::new(
+                    pool.clone(),
+                    Arc::new(cipher),
+                );
+                let provider = codex_cloud_agents::outbound::openai::OpenAi::new()
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                Ok::<Arc<dyn codex_connection::domain::ConnectionService>, anyhow::Error>(Arc::new(
+                    codex_connection::domain::ConnectionServiceImpl::new(
+                        Arc::new(repository),
+                        provider,
+                    ),
+                ))
+            })
+            .transpose()?;
     let codex_provider = codex_cloud_agents::outbound::openai::OpenAi::new()
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let codex_journal_pool = pool.clone();

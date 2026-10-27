@@ -231,7 +231,9 @@ pub(crate) struct MicrosoftCredentials {
     pub(crate) client_id: String,
     pub(crate) client_secret: String,
     pub(crate) tenant_id: String,
-    pub(crate) token_kms_key_id: String,
+    /// The KMS key protecting refresh tokens; `None` when the deployment
+    /// encrypts with its local key instead (`LOCAL_ENCRYPTION_KEY`).
+    pub(crate) token_kms_key_id: Option<String>,
 }
 
 impl Config {
@@ -307,13 +309,19 @@ impl Config {
         self.account_link_state_key().map(drop)
     }
 
-    /// Resolves Microsoft credentials, enforcing that all values are configured together.
-    pub(crate) fn microsoft_credentials(&self) -> anyhow::Result<Option<MicrosoftCredentials>> {
+    /// Resolves Microsoft credentials, enforcing that all values are configured
+    /// together. `local_encryption` (a `LOCAL_ENCRYPTION_KEY` is set) makes the
+    /// KMS key optional.
+    pub(crate) fn microsoft_credentials(
+        &self,
+        local_encryption: bool,
+    ) -> anyhow::Result<Option<MicrosoftCredentials>> {
         resolve_microsoft_credentials(
             &self.microsoft_client_id,
             &self.microsoft_client_secret,
             &self.microsoft_tenant_id,
             &self.microsoft_token_kms_key_id,
+            local_encryption,
         )
     }
 
@@ -354,6 +362,7 @@ fn resolve_microsoft_credentials(
     client_secret: &MicrosoftClientSecret,
     tenant_id: &MicrosoftTenantId,
     token_kms_key_id: &MicrosoftTokenKmsKeyId,
+    local_encryption: bool,
 ) -> anyhow::Result<Option<MicrosoftCredentials>> {
     let client_id = nonblank_value(client_id.value());
     let client_secret = nonblank_value(client_secret.value());
@@ -363,14 +372,16 @@ fn resolve_microsoft_credentials(
     match (client_id, client_secret, tenant_id) {
         (None, None, None) => Ok(None),
         (Some(client_id), Some(client_secret), Some(tenant_id)) => {
-            let token_kms_key_id = token_kms_key_id.context(
-                "MICROSOFT_TOKEN_KMS_KEY_ID must be set to a nonblank value when Microsoft OAuth is enabled",
-            )?;
+            if token_kms_key_id.is_none() && !local_encryption {
+                anyhow::bail!(
+                    "MICROSOFT_TOKEN_KMS_KEY_ID (or LOCAL_ENCRYPTION_KEY) must be set to a nonblank value when Microsoft OAuth is enabled"
+                );
+            }
             Ok(Some(MicrosoftCredentials {
                 client_id: client_id.to_owned(),
                 client_secret: client_secret.to_owned(),
                 tenant_id: tenant_id.to_owned(),
-                token_kms_key_id: token_kms_key_id.to_owned(),
+                token_kms_key_id: token_kms_key_id.map(str::to_owned),
             }))
         }
         _ => anyhow::bail!(

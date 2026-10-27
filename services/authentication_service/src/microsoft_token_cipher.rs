@@ -207,6 +207,35 @@ impl DataKeyProvider for KmsDataKeyProvider {
     }
 }
 
+/// The local key of a local or self-hosted stack as the data-key provider, in
+/// place of KMS.
+#[async_trait::async_trait]
+impl DataKeyProvider for local_kms::LocalKms {
+    async fn generate_data_key(
+        &self,
+        encryption_context: HashMap<String, String>,
+    ) -> Result<GeneratedDataKey, DataKeyProviderError> {
+        let (plaintext, encrypted) =
+            local_kms::LocalKms::generate_data_key(self, &encryption_context)
+                .map_err(|_| DataKeyProviderError::GenerateFailed)?;
+        Ok(GeneratedDataKey {
+            plaintext,
+            encrypted,
+            key_id: local_kms::KEY_ID.to_owned(),
+        })
+    }
+
+    async fn decrypt_data_key(
+        &self,
+        key_id: &str,
+        encrypted_data_key: &[u8],
+        encryption_context: HashMap<String, String>,
+    ) -> Result<Zeroizing<Vec<u8>>, DataKeyProviderError> {
+        local_kms::LocalKms::decrypt(self, key_id, encrypted_data_key, &encryption_context)
+            .map_err(|_| DataKeyProviderError::DecryptFailed)
+    }
+}
+
 struct EncryptionIdentity {
     fusionauth_user_id: String,
     email_address: String,

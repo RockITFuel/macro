@@ -74,3 +74,19 @@ async fn owner_swaps_tampering_and_unknown_versions_fail_closed() {
     encrypted.nonce.clear();
     assert!(cipher.decrypt("owner-a", &encrypted).await.is_err());
 }
+
+#[tokio::test]
+async fn the_local_key_seals_and_binds_state_to_its_owner() {
+    let kms =
+        local_kms::LocalKms::from_base64("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=").unwrap();
+    let cipher = EnvelopeCipher::local(kms);
+    let original = state();
+    let envelope = cipher.encrypt("owner-a", &original).await.unwrap();
+    assert_eq!(envelope.kms_key_id, local_kms::KEY_ID);
+    let decrypted = cipher.decrypt("owner-a", &envelope).await.unwrap();
+    assert_eq!(
+        serde_json::to_vec(&decrypted).unwrap(),
+        serde_json::to_vec(&original).unwrap()
+    );
+    assert!(cipher.decrypt("owner-b", &envelope).await.is_err());
+}

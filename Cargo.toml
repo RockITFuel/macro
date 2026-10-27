@@ -2,6 +2,7 @@
 resolver = "2"
 
 members = [
+  "crates/local_kms",
   "crates/access_requests",
   "crates/agent_api_keys",
   "crates/routines",

@@ -237,6 +237,10 @@ impl LocalEnv {
                 ),
             );
         }
+        // The services encrypt credentials with it instead of LocalStack KMS.
+        if let Some(key) = &self.self_host.local_encryption_key {
+            env.insert("LOCAL_ENCRYPTION_KEY".into(), key.clone());
+        }
         if let Some(domains) = &self.self_host.signup_allowed_domains {
             env.insert("SIGNUP_ALLOWED_DOMAINS".into(), domains.clone());
         }

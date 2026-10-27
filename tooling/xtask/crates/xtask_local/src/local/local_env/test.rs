@@ -854,6 +854,7 @@ fn a_configured_smtp_server_reaches_the_services() {
         "COOKIE_SAME_SITE",
         "SIGNUP_ALLOWED_DOMAINS",
         "EMAIL_SERVICE_CLOUDFRONT_DISTRIBUTION_URL",
+        "LOCAL_ENCRYPTION_KEY",
     ] {
         assert!(!default.contains_key(key), "{key}");
     }
@@ -868,6 +869,7 @@ fn a_configured_smtp_server_reaches_the_services() {
             "MACRO_MAIL_FROM" => Some("noreply@example.com"),
             "MACRO_MAIL_FROM_NAME" => Some("Macro"),
             "MACRO_SIGNUP_ALLOWED_DOMAINS" => Some("example.com,example.org"),
+            "MACRO_LOCAL_ENCRYPTION_KEY" => Some("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="),
             _ => None,
         }
         .map(str::to_owned)
@@ -882,6 +884,10 @@ fn a_configured_smtp_server_reaches_the_services() {
     assert_eq!(env["SMTP_PASSWORD"], "smtp-secret");
     assert_eq!(env["SMTP_FROM"], "Macro <noreply@example.com>");
     assert_eq!(env["COOKIE_SAME_SITE"], "Lax");
+    assert_eq!(
+        env["LOCAL_ENCRYPTION_KEY"],
+        "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="
+    );
     assert_eq!(env["DEV_DANGEROUS_LOCAL_CONTAINERS"], "false");
     assert_eq!(default["DEV_DANGEROUS_LOCAL_CONTAINERS"], "true");
     assert_eq!(default["BILLING_DISABLED"], "true");

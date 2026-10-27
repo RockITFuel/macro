@@ -164,7 +164,10 @@ fn complete_microsoft_credentials_are_resolved() {
     assert_eq!(credentials.client_id, "microsoft-client-id");
     assert_eq!(credentials.client_secret, "microsoft-client-secret");
     assert_eq!(credentials.tenant_id, "microsoft-tenant-id");
-    assert_eq!(credentials.token_kms_key_id, "microsoft-kms-key");
+    assert_eq!(
+        credentials.token_kms_key_id.as_deref(),
+        Some("microsoft-kms-key")
+    );
 }
 
 #[test]
@@ -258,7 +261,24 @@ fn resolve_with_kms(
         &microsoft_client_secret(client_secret),
         &microsoft_tenant_id(tenant_id),
         &microsoft_token_kms_key_id(token_kms_key_id),
+        false,
     )
+}
+
+#[test]
+fn a_local_encryption_key_makes_the_microsoft_kms_key_optional() {
+    let resolve = |local_encryption| {
+        resolve_microsoft_credentials(
+            &microsoft_client_id(Some("client")),
+            &microsoft_client_secret(Some("secret")),
+            &microsoft_tenant_id(Some("organizations")),
+            &microsoft_token_kms_key_id(None),
+            local_encryption,
+        )
+    };
+    assert!(resolve(false).is_err());
+    let credentials = resolve(true).unwrap().expect("credentials");
+    assert_eq!(credentials.token_kms_key_id, None);
 }
 
 fn microsoft_client_id(value: Option<&'static str>) -> MicrosoftClientId {

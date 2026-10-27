@@ -280,6 +280,87 @@ impl KeyOwner {
     }
 }
 
+/// [`KmsCiphertexts`] over the local key of a local or self-hosted stack (see
+/// [`local_kms`]): the same context binding, without a KMS whose keys a
+/// LocalStack restart throws away.
+#[async_trait::async_trait]
+impl KmsCiphertexts for local_kms::LocalKms {
+    async fn encrypt(
+        &self,
+        encryption_context: HashMap<String, String>,
+        plaintext: &[u8],
+    ) -> Result<(Vec<u8>, String), KmsCiphertextsError> {
+        let ciphertext = local_kms::LocalKms::encrypt(self, &encryption_context, plaintext)
+            .map_err(|_| KmsCiphertextsError)?;
+        Ok((ciphertext, local_kms::KEY_ID.to_owned()))
+    }
+
+    async fn decrypt(
+        &self,
+        kms_key_id: &str,
+        ciphertext: &[u8],
+        encryption_context: HashMap<String, String>,
+    ) -> Result<Zeroizing<Vec<u8>>, KmsCiphertextsError> {
+        local_kms::LocalKms::decrypt(self, kms_key_id, ciphertext, &encryption_context)
+            .map_err(|_| KmsCiphertextsError)
+    }
+}
+
+/// AWS KMS, or the local key when the deployment has one; chosen at startup.
+#[derive(Clone)]
+pub enum KmsOrLocal {
+    /// Encrypt and decrypt with AWS KMS.
+    Aws(AwsKmsCiphertexts),
+    /// Encrypt and decrypt with `LOCAL_ENCRYPTION_KEY`.
+    Local(local_kms::LocalKms),
+}
+
+impl KmsOrLocal {
+    /// The local key when one is configured, otherwise `aws`.
+    pub fn choose(
+        local: Option<&local_kms::LocalKms>,
+        aws: impl FnOnce() -> AwsKmsCiphertexts,
+    ) -> Self {
+        match local {
+            Some(local) => Self::Local(local.clone()),
+            None => Self::Aws(aws()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl KmsCiphertexts for KmsOrLocal {
+    async fn encrypt(
+        &self,
+        encryption_context: HashMap<String, String>,
+        plaintext: &[u8],
+    ) -> Result<(Vec<u8>, String), KmsCiphertextsError> {
+        match self {
+            Self::Aws(aws) => aws.encrypt(encryption_context, plaintext).await,
+            Self::Local(local) => {
+                KmsCiphertexts::encrypt(local, encryption_context, plaintext).await
+            }
+        }
+    }
+
+    async fn decrypt(
+        &self,
+        kms_key_id: &str,
+        ciphertext: &[u8],
+        encryption_context: HashMap<String, String>,
+    ) -> Result<Zeroizing<Vec<u8>>, KmsCiphertextsError> {
+        match self {
+            Self::Aws(aws) => {
+                aws.decrypt(kms_key_id, ciphertext, encryption_context)
+                    .await
+            }
+            Self::Local(local) => {
+                KmsCiphertexts::decrypt(local, kms_key_id, ciphertext, encryption_context).await
+            }
+        }
+    }
+}
+
 /// [`KmsCiphertexts`] over a real AWS KMS client.
 #[derive(Clone)]
 pub struct AwsKmsCiphertexts {

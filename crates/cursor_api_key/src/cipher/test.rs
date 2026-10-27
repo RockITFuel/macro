@@ -273,3 +273,20 @@ impl KmsCiphertexts for FakeKms {
             .ok_or(KmsCiphertextsError)
     }
 }
+
+#[tokio::test]
+async fn the_local_key_replaces_kms_for_cursor_keys() {
+    let kms =
+        local_kms::LocalKms::from_base64("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=").unwrap();
+    let cipher = KmsCursorApiKeyCipher::new(KmsOrLocal::choose(Some(&kms), || {
+        unreachable!("the local key is configured")
+    }));
+    let encrypted = cipher
+        .encrypt(OWNER, CursorApiKey::parse(KEY).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(encrypted.kms_key_id, local_kms::KEY_ID);
+    let decrypted = cipher.decrypt(OWNER, &encrypted).await.unwrap();
+    assert_eq!(decrypted.expose(), KEY);
+    assert!(cipher.decrypt(OTHER_OWNER, &encrypted).await.is_err());
+}

@@ -62,6 +62,10 @@ fn a_public_stack_refuses_fixture_secrets() {
     public.insert(PUBLIC_ORIGIN.into(), "https://macro.example.com".into());
     public.insert(SMTP_HOST.into(), "smtp.example.com".into());
     public.insert(MAIL_FROM.into(), "noreply@example.com".into());
+    public.insert(
+        LOCAL_ENCRYPTION_KEY.into(),
+        "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=".into(),
+    );
     public.insert("JWT_SECRET_KEY".into(), "overridden".into());
     let error = check(&public, &fixtures).unwrap_err().to_string();
     assert!(error.contains(INTERNAL_AUTH_KEY), "{error}");
@@ -118,4 +122,21 @@ fn a_public_stack_refuses_local_containers() {
     ]);
     let error = check(&public, &BTreeMap::new()).unwrap_err().to_string();
     assert!(error.contains("DEV_DANGEROUS_LOCAL_CONTAINERS"), "{error}");
+}
+
+#[test]
+fn a_public_stack_needs_a_valid_local_encryption_key() {
+    let base = [
+        (PUBLIC_ORIGIN, "https://macro.example.com"),
+        (SMTP_HOST, "smtp.example.com"),
+        (MAIL_FROM, "noreply@example.com"),
+    ];
+    let error = check(&env(&base), &BTreeMap::new())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(LOCAL_ENCRYPTION_KEY), "{error}");
+
+    let short = env(&[(LOCAL_ENCRYPTION_KEY, "c2hvcnQ=")]);
+    let error = check(&short, &BTreeMap::new()).unwrap_err().to_string();
+    assert!(error.contains("32 bytes"), "{error}");
 }
