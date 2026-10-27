@@ -12,7 +12,8 @@ and returns text — nothing is stored.
 - `src/domain/models.rs`: `Recording`/`Transcript` value objects and limits
   (`MAX_AUDIO_BYTES`, `MAX_AUDIO_DURATION`).
 - `src/domain/ports.rs`: `TranscriptionProvider` / `RecordingInspector` traits.
-- `src/outbound/whisper.rs`: the OpenAI Whisper adapter.
+- `src/outbound/whisper.rs`: the OpenAI Whisper adapter; `DICTATION_STT_API_BASE`
+  points it at any OpenAI-compatible API (self-host: `services/transcription/LOCAL_STT.md`).
 - `src/inbound/axum_router.rs`: the authenticated, rate-limited HTTP endpoint.
 
 ## Scope

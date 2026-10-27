@@ -1,0 +1,4 @@
+# CPU worker: Parakeet TDT 0.6B v3 through onnx-asr (benchmarked versions).
+-r requirements-local-stt.txt
+onnx-asr[cpu,hub]==0.12.0
+onnxruntime==1.31.1

@@ -1186,7 +1186,7 @@ pub async fn run() -> anyhow::Result<()> {
     );
     let dictation_state = dictation::inbound::axum_router::DictationRouterState::new(
         dictation::domain::DictationServiceImpl::new(
-            dictation::outbound::WhisperTranscriber::new(&config.openai_api_key)?,
+            dictation::outbound::WhisperTranscriber::from_env(&config.openai_api_key)?,
             dictation::outbound::SymphoniaRecordingInspector,
             ai_usage::pg_recorder_with_enforcement(db.clone(), config.enable_ai_usage_enforcement),
         ),

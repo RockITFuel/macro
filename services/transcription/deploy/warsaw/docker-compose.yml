@@ -1,0 +1,79 @@
+# Local speech-to-text on morgo-warsaw: the queue (Redis with AOF), the hub
+# (dispatcher + dictation gateway), the LiveKit transcription agent and an
+# optional live-only fallback worker. Lives in /srv/macro-stt; env in .env
+# (0600), see LOCAL_STT.md. Nothing is public: Redis is published on the
+# Tailscale address only, the gateway on loopback and the Macro network.
+name: macro-stt
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: macro-stt-redis
+    restart: unless-stopped
+    command: >
+      redis-server --appendonly yes --appendfsync everysec
+      --requirepass ${LOCAL_STT_REDIS_PASSWORD:?set in .env}
+      --maxmemory 512mb --maxmemory-policy noeviction
+    ports:
+      - "100.81.201.84:6385:6379"
+    volumes:
+      - redis-data:/data
+    networks: [stt]
+
+  hub:
+    image: ${LOCAL_STT_IMAGE_HUB:-youriheuvel/macro-local-stt-hub:latest}
+    container_name: macro-stt-hub
+    restart: unless-stopped
+    depends_on: [redis]
+    environment:
+      MACRO_LOCAL_STT_REDIS_URL: redis://:${LOCAL_STT_REDIS_PASSWORD}@macro-stt-redis:6379/0
+      MACRO_LOCAL_STT_GATEWAY_TOKEN: ${LOCAL_STT_GATEWAY_TOKEN:?set in .env}
+    ports:
+      - "127.0.0.1:8790:8790"
+    networks: [stt, databases-prod]
+
+  # LiveKit agent: one transcription session per call participant. Dispatched
+  # by Macro when LIVEKIT_TRANSCRIPTION_AGENT_NAME=macro-transcriber.
+  agent:
+    image: ${LOCAL_STT_IMAGE_AGENT:-youriheuvel/macro-transcriber:latest}
+    container_name: macro-stt-agent
+    restart: unless-stopped
+    depends_on: [redis]
+    environment:
+      LIVEKIT_URL: ${LIVEKIT_URL:-wss://livekit.macro.alphamonitoring.app}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?set in .env}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set in .env}
+      INTERNAL_CALL_SECRET: ${INTERNAL_CALL_SECRET:?set in .env}
+      MACRO_API_URL: http://macro-prod-document_storage_service-1:8080
+      MACRO_LOCAL_STT_REDIS_URL: redis://:${LOCAL_STT_REDIS_PASSWORD}@macro-stt-redis:6379/0
+    networks: [stt, databases-prod]
+
+  # Last-resort worker for live utterances while luka-mini and the MacBook
+  # are both away. Off by default: `docker compose --profile fallback up -d`.
+  worker:
+    profiles: [fallback]
+    image: ${LOCAL_STT_IMAGE_WORKER:-youriheuvel/macro-local-stt-worker:latest}
+    container_name: macro-stt-worker
+    restart: unless-stopped
+    depends_on: [redis]
+    cpus: 4
+    environment:
+      MACRO_LOCAL_STT_REDIS_URL: redis://:${LOCAL_STT_REDIS_PASSWORD}@macro-stt-redis:6379/0
+      LOCAL_STT_WORKER_ID: morgo-warsaw
+      LOCAL_STT_MACHINE: morgo-warsaw
+      LOCAL_STT_THREADS: "4"
+      LOCAL_STT_MAX_CONCURRENCY: "1"
+      LOCAL_STT_PRIORITIES: live
+      LOCAL_STT_TIER: "2"
+      LOCAL_STT_MAX_CPU_LOAD: "0.5"
+    volumes:
+      - models:/models
+    networks: [stt]
+
+volumes:
+  redis-data:
+  models:
+
+networks:
+  stt:
+  databases-prod:
+    external: true

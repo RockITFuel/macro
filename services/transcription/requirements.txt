@@ -1,5 +1,6 @@
 python-dotenv
 livekit-agents[silero]==1.5.7
 httpx
+redis>=5.2  # local_stt queue (only used with MACRO_LOCAL_STT_REDIS_URL)
 resemblyzer==0.1.4
 setuptools==80.10.2  # resemblyzer's webrtcvad dependency imports pkg_resources
