@@ -1,4 +1,4 @@
-import { graphlib, layout } from '@dagrejs/dagre';
+import { type EdgeLabel, graphlib, layout } from '@dagrejs/dagre';
 import type { FlowEdge, FlowGraph, FlowGroup, FlowNode } from './graph';
 
 export type Box = { x: number; y: number; width: number; height: number };
@@ -202,8 +202,15 @@ export function layoutFlow(graph: FlowGraph): FlowLayout {
   }));
 
   const edges: LaidOutEdge[] = graph.edges.map((edge) => {
-    const placed = g.edge({ v: edge.source, w: edge.target, name: edge.id });
-    const points = (placed?.points ?? []).map((p) => ({ x: p.x, y: p.y }));
+    const placed: EdgeLabel | undefined = g.edge({
+      v: edge.source,
+      w: edge.target,
+      name: edge.id,
+    });
+    const points = (placed?.points ?? []).map((p: Point) => ({
+      x: p.x,
+      y: p.y,
+    }));
     const labelAt =
       edge.label && placed?.x !== undefined && placed.y !== undefined
         ? { x: placed.x, y: placed.y }
@@ -261,7 +268,11 @@ function simplify(points: Point[]): Point[] {
   const snapped: Point[] = [];
   for (const point of points) {
     const last = snapped[snapped.length - 1];
-    if (last && Math.abs(last.x - point.x) < 1 && Math.abs(last.y - point.y) < 1)
+    if (
+      last &&
+      Math.abs(last.x - point.x) < 1 &&
+      Math.abs(last.y - point.y) < 1
+    )
       continue;
     snapped.push(point);
   }
@@ -277,7 +288,8 @@ function simplify(points: Point[]): Point[] {
 }
 
 function roundedPolyline(points: Point[], radius: number): string {
-  const fmt = (p: Point) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`;
+  const fmt = (p: Point) =>
+    `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`;
   let d = `M${fmt(points[0])}`;
   for (let i = 1; i < points.length - 1; i++) {
     const [a, b, c] = [points[i - 1], points[i], points[i + 1]];

@@ -1,10 +1,10 @@
 import {
   Background,
   BaseEdge,
-  type EdgeProps,
   Controls,
   createEdgeStore,
   createNodeStore,
+  type EdgeProps,
   Handle,
   MarkerType,
   type NodeProps,
