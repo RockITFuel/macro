@@ -1903,3 +1903,187 @@ fn a_deleted_session_streams_to_both_its_owner_and_origin_parent() {
         ]),
     );
 }
+
+mod property_events {
+    //! A task's property values (status, priority, assignees, labels) reach
+    //! webhooks and the event stream as document events of that task.
+
+    use super::*;
+    use models_properties::EntityType as PropertyEntityType;
+    use models_properties::service::property_option::PropertyOptionValue;
+    use properties::domain::events::{
+        EntityPropertiesClearedMetadata, EntityPropertyDeletedMetadata,
+        EntityPropertyUpdatedMetadata, PropertyOptionDeletedMetadata, PropertyTopicEvent,
+    };
+
+    const STATUS_PROPERTY_ID: &str = "00000001-0000-0000-0000-000000000002";
+
+    fn status_property() -> Uuid {
+        Uuid::parse_str(STATUS_PROPERTY_ID).expect("valid uuid")
+    }
+
+    fn updated(entity_type: PropertyEntityType, entity_id: &str) -> Event<PropertyTopicEvent> {
+        Event::new(PropertyTopicEvent::EntityPropertyUpdated(
+            EntityPropertyUpdatedMetadata {
+                entity_property_id: Uuid::nil(),
+                entity_id: entity_id.to_string(),
+                entity_type,
+                property_definition_id: status_property(),
+                actor_user_id: Some(user_id("macro|owner@example.com")),
+                actor: None,
+                on_behalf_of: None,
+                value: None,
+                previous_value: None,
+                updated_at: timestamp(),
+            },
+        ))
+    }
+
+    fn task_cases() -> Vec<(&'static str, Event<PropertyTopicEvent>)> {
+        vec![
+            (
+                "entity_property.updated",
+                updated(PropertyEntityType::Task, DOCUMENT_ID),
+            ),
+            (
+                "entity_property.updated",
+                updated(PropertyEntityType::Document, DOCUMENT_ID),
+            ),
+            (
+                "entity_property.deleted",
+                Event::new(PropertyTopicEvent::EntityPropertyDeleted(
+                    EntityPropertyDeletedMetadata {
+                        entity_property_id: Uuid::nil(),
+                        entity_id: DOCUMENT_ID.to_string(),
+                        entity_type: PropertyEntityType::Task,
+                        property_definition_id: status_property(),
+                        actor_user_id: None,
+                        actor: None,
+                        on_behalf_of: None,
+                    },
+                )),
+            ),
+            (
+                "entity_properties.cleared",
+                Event::new(PropertyTopicEvent::EntityPropertiesCleared(
+                    EntityPropertiesClearedMetadata {
+                        entity_id: DOCUMENT_ID.to_string(),
+                        entity_type: PropertyEntityType::Task,
+                        actor_user_id: None,
+                        actor: None,
+                        on_behalf_of: None,
+                    },
+                )),
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn task_property_changes_are_document_events_of_the_task() {
+        for (event_name, event) in task_cases() {
+            let access = MockAccessService::with_users(vec![user_id(PERSONAL_WORKSPACE_ID)]);
+            let repository = MockRepository::new(
+                vec![PERSONAL_WORKSPACE_ID.to_string()],
+                vec![webhook("wh_match", PERSONAL_WORKSPACE_ID)],
+            );
+            let enqueuer = MockEnqueuer::default();
+            let service = service(access.clone(), repository.clone(), enqueuer.clone());
+            let expected_envelope = serde_json::to_value(&event).expect("serializable event");
+
+            service
+                .ingest_property_event(event)
+                .await
+                .unwrap_or_else(|error| panic!("{event_name} should be ingested: {error}"));
+
+            assert_eq!(
+                lock(&access.calls).as_slice(),
+                &[(DOCUMENT_ID.to_string(), EntityType::Document)],
+                "{event_name} is gated by access to the task"
+            );
+            assert_eq!(
+                lock(&repository.state).match_calls.as_slice(),
+                &[MatchCall {
+                    workspace_ids: vec![PERSONAL_WORKSPACE_ID.to_string()],
+                    event_name: event_name.to_string(),
+                    entity_id: DOCUMENT_ID.to_string(),
+                }],
+            );
+            let enqueuer_state = lock(&enqueuer.state);
+            assert_eq!(enqueuer_state.attempted_messages.len(), 1);
+            let message = &enqueuer_state.attempted_messages[0];
+            assert_eq!(message.event.event_name, event_name);
+            assert_eq!(message.event.entity_type, "document");
+            assert_eq!(message.event.entity_id, DOCUMENT_ID);
+            assert_eq!(message.event.ordering_key, DOCUMENT_ID);
+            assert_eq!(message.event.broker_envelope, expected_envelope);
+            assert_eq!(message.event.broker_envelope["event_type"], event_name);
+        }
+    }
+
+    #[tokio::test]
+    async fn definitions_options_and_other_entities_stay_internal() {
+        let skipped = vec![
+            updated(PropertyEntityType::Company, DOCUMENT_ID),
+            updated(PropertyEntityType::Initiative, DOCUMENT_ID),
+            Event::new(PropertyTopicEvent::OptionDeleted(
+                PropertyOptionDeletedMetadata {
+                    option_id: Uuid::nil(),
+                    property_definition_id: status_property(),
+                    actor_user_id: None,
+                    value: PropertyOptionValue::String("Bug".to_string()),
+                },
+            )),
+        ];
+        let access = MockAccessService::with_users(vec![user_id(PERSONAL_WORKSPACE_ID)]);
+        let repository = MockRepository::new(
+            vec![PERSONAL_WORKSPACE_ID.to_string()],
+            vec![webhook("wh_match", PERSONAL_WORKSPACE_ID)],
+        );
+        let enqueuer = MockEnqueuer::default();
+        let service = service(access.clone(), repository.clone(), enqueuer.clone());
+
+        for event in skipped {
+            assert!(
+                normalized_property_event(&event)
+                    .expect("normalizes")
+                    .is_none()
+            );
+            service
+                .ingest_property_event(event)
+                .await
+                .expect("skipped without error");
+        }
+
+        assert!(lock(&access.calls).is_empty());
+        assert!(lock(&enqueuer.state).attempted_messages.is_empty());
+    }
+
+    #[test]
+    fn a_task_id_that_is_not_a_uuid_is_refused() {
+        let error = normalized_property_event(&updated(PropertyEntityType::Task, "not-a-uuid"))
+            .expect_err("invalid id");
+
+        assert!(matches!(
+            error,
+            WebhookEventIngestionError::InvalidEntityId { .. }
+        ));
+    }
+
+    #[cfg(feature = "stream")]
+    #[test]
+    fn the_stream_shows_it_to_whoever_may_read_the_task() {
+        use crate::domain::ingestion::stream::property_stream_candidate;
+        use crate::domain::stream::StreamAudience;
+
+        let candidate = property_stream_candidate(&updated(PropertyEntityType::Task, DOCUMENT_ID))
+            .expect("normalizes")
+            .expect("a task's property change is streamed");
+
+        assert!(matches!(
+            candidate.audience,
+            StreamAudience::Entity { ref entity_id, entity_type: EntityType::Document }
+                if entity_id == DOCUMENT_ID
+        ));
+        assert_eq!(candidate.event.event_name, "entity_property.updated");
+    }
+}

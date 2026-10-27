@@ -71,7 +71,8 @@ fn subscribes_to_all_ingestion_topics() {
             "macro.messages",
             "macro.webhooks",
             "macro.agent_sessions",
-            "macro.agent_session_lifecycle"
+            "macro.agent_session_lifecycle",
+            "macro.properties"
         ]
     );
 }
@@ -206,6 +207,13 @@ impl WebhookEventIngestionService for FlakyIngestionService {
         _event: Event<agent_session::domain::events::AgentSessionLifecycleEvent>,
     ) -> Result<(), WebhookEventIngestionError> {
         self.ingest()
+    }
+
+    async fn ingest_property_event(
+        &self,
+        _event: Event<properties::domain::events::PropertyTopicEvent>,
+    ) -> Result<(), WebhookEventIngestionError> {
+        Ok(())
     }
 }
 

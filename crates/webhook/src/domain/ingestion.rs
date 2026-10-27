@@ -27,6 +27,8 @@ use macro_event_broker::Event;
 use macro_user_id::user_id::MacroUserIdStr;
 use messages::domain::models::MessageParent;
 use messages::outbound::broker::MessageTopicEvent;
+use models_properties::EntityType as PropertyEntityType;
+use properties::domain::events::PropertyTopicEvent;
 use std::future::Future;
 use std::sync::Arc;
 use tracing::Instrument as _;
@@ -123,6 +125,12 @@ pub trait WebhookEventIngestionService: Clone + Send + Sync + 'static {
     fn ingest_agent_session_lifecycle_event(
         &self,
         event: Event<AgentSessionLifecycleEvent>,
+    ) -> impl Future<Output = Result<(), WebhookEventIngestionError>> + Send;
+
+    /// Ingest one `macro.properties` event envelope.
+    fn ingest_property_event(
+        &self,
+        event: Event<PropertyTopicEvent>,
     ) -> impl Future<Output = Result<(), WebhookEventIngestionError>> + Send;
 }
 
@@ -268,6 +276,66 @@ pub(crate) fn normalized_document_event(
         | DocumentTopicEvent::SyncContentUpdated(_)
         | DocumentTopicEvent::Purged(_) => return Ok(None),
     };
+
+    if Uuid::parse_str(entity_id).is_err() {
+        return Err(WebhookEventIngestionError::InvalidEntityId {
+            entity_type: DOCUMENT_ENTITY_TYPE,
+            entity_id: entity_id.clone(),
+        });
+    }
+
+    let broker_envelope = serde_json::to_value(event)?;
+    Ok(Some(normalized_event(
+        event.event_id,
+        event.schema_version,
+        event_name,
+        DOCUMENT_ENTITY_TYPE,
+        entity_id,
+        broker_envelope,
+    )))
+}
+
+/// Normalize one `macro.properties` event.
+///
+/// Only a task's or document's own property values are exposed: a status,
+/// priority, assignee, label or custom property set, cleared or removed on
+/// it. They are document events for access and filtering (`ids` mean the
+/// task's document id), so an integration that follows a task sees every
+/// change to it, not only renames. Definition and option events, and the
+/// properties of other entities (CRM, database rows, projects), stay
+/// internal.
+pub(crate) fn normalized_property_event(
+    event: &Event<PropertyTopicEvent>,
+) -> Result<Option<NormalizedWebhookEvent>, WebhookEventIngestionError> {
+    let (event_name, entity_id, entity_type) = match &event.event {
+        PropertyTopicEvent::EntityPropertyUpdated(metadata) => (
+            "entity_property.updated",
+            &metadata.entity_id,
+            &metadata.entity_type,
+        ),
+        PropertyTopicEvent::EntityPropertyDeleted(metadata) => (
+            "entity_property.deleted",
+            &metadata.entity_id,
+            &metadata.entity_type,
+        ),
+        PropertyTopicEvent::EntityPropertiesCleared(metadata) => (
+            "entity_properties.cleared",
+            &metadata.entity_id,
+            &metadata.entity_type,
+        ),
+        PropertyTopicEvent::Created(_)
+        | PropertyTopicEvent::Deleted(_)
+        | PropertyTopicEvent::OptionCreated(_)
+        | PropertyTopicEvent::OptionUpdated(_)
+        | PropertyTopicEvent::OptionDeleted(_) => return Ok(None),
+    };
+
+    if !matches!(
+        entity_type,
+        PropertyEntityType::Task | PropertyEntityType::Document
+    ) {
+        return Ok(None);
+    }
 
     if Uuid::parse_str(entity_id).is_err() {
         return Err(WebhookEventIngestionError::InvalidEntityId {
@@ -586,6 +654,18 @@ where
         event: Event<DocumentTopicEvent>,
     ) -> Result<(), WebhookEventIngestionError> {
         let Some(event) = normalized_document_event(&event)? else {
+            return Ok(());
+        };
+        self.resolve_entity_access_and_enqueue(event, EntityType::Document)
+            .await
+    }
+
+    #[tracing::instrument(skip(self, event), fields(event_id = %event.event_id), err)]
+    async fn ingest_property_event(
+        &self,
+        event: Event<PropertyTopicEvent>,
+    ) -> Result<(), WebhookEventIngestionError> {
+        let Some(event) = normalized_property_event(&event)? else {
             return Ok(());
         };
         self.resolve_entity_access_and_enqueue(event, EntityType::Document)

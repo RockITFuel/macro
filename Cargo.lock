@@ -21515,6 +21515,8 @@ dependencies = [
  "model-error-response",
  "model_owner",
  "model_user",
+ "models_properties",
+ "properties",
  "rate_limit",
  "rdkafka",
  "reqwest 0.13.4",

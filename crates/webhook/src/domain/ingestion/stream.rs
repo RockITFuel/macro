@@ -4,7 +4,7 @@ use super::{
     LifecycleAudience, TriggerAudience, WebhookEventIngestionError, lifecycle_audience,
     normalized_agent_session_lifecycle_event, normalized_agent_trigger_event,
     normalized_channel_event, normalized_document_event, normalized_message_event,
-    normalized_webhook_event,
+    normalized_property_event, normalized_webhook_event,
 };
 use crate::domain::{
     events::WebhookTopicEvent,
@@ -17,12 +17,28 @@ use documents::domain::events::DocumentTopicEvent;
 use entity_access::domain::models::EntityType;
 use macro_event_broker::Event;
 use messages::outbound::broker::MessageTopicEvent;
+use properties::domain::events::PropertyTopicEvent;
 
 pub(crate) fn document_stream_candidate(
     event: &Event<DocumentTopicEvent>,
 ) -> Result<Option<StreamCandidateEvent>, WebhookEventIngestionError> {
     Ok(
         normalized_document_event(event)?.map(|normalized| StreamCandidateEvent {
+            audience: StreamAudience::Entity {
+                entity_id: normalized.entity_id.clone(),
+                entity_type: EntityType::Document,
+            },
+            event: normalized,
+        }),
+    )
+}
+
+/// A task's property change reaches whoever may read the task.
+pub(crate) fn property_stream_candidate(
+    event: &Event<PropertyTopicEvent>,
+) -> Result<Option<StreamCandidateEvent>, WebhookEventIngestionError> {
+    Ok(
+        normalized_property_event(event)?.map(|normalized| StreamCandidateEvent {
             audience: StreamAudience::Entity {
                 entity_id: normalized.entity_id.clone(),
                 entity_type: EntityType::Document,

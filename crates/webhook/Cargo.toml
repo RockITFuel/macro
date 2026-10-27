@@ -34,6 +34,8 @@ inbound = [
 ]
 ingestion = [
   "dep:agent_session",
+  "dep:models_properties",
+  "dep:properties",
   "dep:agent_trigger",
   "dep:channels",
   "dep:documents",
@@ -75,6 +77,8 @@ channels = { path = "../channels", default-features = false, optional = true }
 chrono = { workspace = true }
 documents = { path = "../documents", default-features = false, optional = true }
 model_owner = { path = "../model_owner" }
+models_properties = { path = "../models_properties", optional = true }
+properties = { path = "../properties", default-features = false, optional = true }
 entity_access = { path = "../entity_access", default-features = false, features = [
   "ports",
 ], optional = true }
