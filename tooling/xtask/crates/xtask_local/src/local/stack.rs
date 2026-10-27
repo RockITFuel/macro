@@ -420,13 +420,7 @@ fn remount(
         .merged
         .get("GMAIL_FORWARDER_SA_KEY")
         .is_some_and(|key| !key.trim().is_empty());
-    super::gen_compose::generate(
-        mode,
-        instance,
-        new,
-        state.frontend == "static",
-        gmail_forwarder,
-    )?;
+    super::gen_compose::generate(mode, instance, new, state.frontend == "static", &env.merged)?;
     let mut up = super::compose_cmd(instance, env);
     up.args([
         "up",

@@ -1,12 +1,20 @@
 use super::*;
 use crate::local::Mode;
 use crate::local::instance::{Instance, Port};
+use crate::local::self_host::SelfHost;
 
 /// The merged env a `--no-doppler` stack sees: boot stubs below, the
 /// authoritative local env on top (mirrors `env_layer::resolve`).
 fn local_env() -> BTreeMap<String, String> {
     let instance = Instance::derive(None, None).expect("default instance derives");
-    let local = LocalEnv::for_instance(Mode::Local, &instance, true, Tunnels::default()).unwrap();
+    let local = LocalEnv::for_instance(
+        Mode::Local,
+        &instance,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap();
     let mut env = local.boot_stub_env();
     env.extend(local.to_env());
     env
@@ -168,7 +176,14 @@ fn emits_required_keys() {
 #[test]
 fn boot_stubs_do_not_overlap_authoritative_env() {
     let instance = Instance::derive(None, None).expect("default instance derives");
-    let local = LocalEnv::for_instance(Mode::Local, &instance, true, Tunnels::default()).unwrap();
+    let local = LocalEnv::for_instance(
+        Mode::Local,
+        &instance,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap();
     let authoritative = local.to_env();
     for key in local.boot_stub_env().keys() {
         assert!(
@@ -216,6 +231,7 @@ fn internal_auth_values_are_authoritative_local_env() {
         &Instance::derive(None, None).unwrap(),
         true,
         Tunnels::default(),
+        &SelfHost::default(),
     )
     .unwrap()
     .to_env();
@@ -371,12 +387,24 @@ fn aws_creds_are_dummy() {
 fn instance_secrets_are_scoped_but_identity_is_fixed() {
     let default = Instance::derive(None, None).unwrap();
     let agent_a = Instance::derive(Some("agent-a"), None).unwrap();
-    let a = LocalEnv::for_instance(Mode::Local, &default, true, Tunnels::default())
-        .unwrap()
-        .to_env();
-    let b = LocalEnv::for_instance(Mode::Local, &agent_a, true, Tunnels::default())
-        .unwrap()
-        .to_env();
+    let a = LocalEnv::for_instance(
+        Mode::Local,
+        &default,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
+    let b = LocalEnv::for_instance(
+        Mode::Local,
+        &agent_a,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
 
     assert_ne!(
         a.get("INTERNAL_CALL_SECRET"),
@@ -394,12 +422,24 @@ fn instance_secrets_are_scoped_but_identity_is_fixed() {
 fn fusionauth_public_url_uses_the_instance_host_port() {
     let default = Instance::derive(None, None).unwrap();
     let named = Instance::derive(Some("2508"), None).unwrap();
-    let default_env = LocalEnv::for_instance(Mode::Local, &default, true, Tunnels::default())
-        .unwrap()
-        .to_env();
-    let named_env = LocalEnv::for_instance(Mode::Local, &named, true, Tunnels::default())
-        .unwrap()
-        .to_env();
+    let default_env = LocalEnv::for_instance(
+        Mode::Local,
+        &default,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
+    let named_env = LocalEnv::for_instance(
+        Mode::Local,
+        &named,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
     let named_public_url = format!("http://localhost:{}", named.port(Port::FusionAuth));
 
     assert_eq!(
@@ -447,12 +487,19 @@ fn local_sandboxes_join_the_instances_compose_network() {
         &Instance::derive(None, None).unwrap(),
         true,
         Tunnels::default(),
+        &SelfHost::default(),
     )
     .unwrap()
     .to_env();
-    let named_env = LocalEnv::for_instance(Mode::Local, &named, true, Tunnels::default())
-        .unwrap()
-        .to_env();
+    let named_env = LocalEnv::for_instance(
+        Mode::Local,
+        &named,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
 
     assert_eq!(
         default_env
@@ -474,12 +521,24 @@ fn local_sandboxes_join_the_instances_compose_network() {
 fn mcp_client_public_url_uses_the_proxy_cognition_route() {
     let default = Instance::derive(None, None).unwrap();
     let named = Instance::derive(Some("2508"), None).unwrap();
-    let default_env = LocalEnv::for_instance(Mode::Local, &default, true, Tunnels::default())
-        .unwrap()
-        .to_env();
-    let named_env = LocalEnv::for_instance(Mode::Local, &named, true, Tunnels::default())
-        .unwrap()
-        .to_env();
+    let default_env = LocalEnv::for_instance(
+        Mode::Local,
+        &default,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
+    let named_env = LocalEnv::for_instance(
+        Mode::Local,
+        &named,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
     let named_public_url = format!("https://localhost:{}/cognition", named.port(Port::Proxy));
 
     assert_eq!(
@@ -503,10 +562,15 @@ fn frontend_origin_tracks_how_the_app_is_served() {
         Instance::derive(Some("remote-dev"), Some(20100)).unwrap(),
     ] {
         for static_frontend in [true, false] {
-            let env =
-                LocalEnv::for_instance(Mode::Local, &instance, static_frontend, Tunnels::default())
-                    .unwrap()
-                    .to_env();
+            let env = LocalEnv::for_instance(
+                Mode::Local,
+                &instance,
+                static_frontend,
+                Tunnels::default(),
+                &SelfHost::default(),
+            )
+            .unwrap()
+            .to_env();
             let origin = if static_frontend {
                 proxy::url(&instance)
             } else {
@@ -538,9 +602,15 @@ fn frontend_origin_tracks_how_the_app_is_served() {
 #[test]
 fn the_egress_url_override_is_the_hyphenated_in_network_alias() {
     let named = Instance::derive(Some("2508"), None).unwrap();
-    let named_env = LocalEnv::for_instance(Mode::Local, &named, true, Tunnels::default())
-        .unwrap()
-        .to_env();
+    let named_env = LocalEnv::for_instance(
+        Mode::Local,
+        &named,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
 
     assert_eq!(
         named_env
@@ -573,6 +643,7 @@ fn the_public_tunnel_overrides_the_egress_service_url() {
             egress: Some(url),
             ..Tunnels::default()
         },
+        &SelfHost::default(),
     )
     .unwrap()
     .to_env();
@@ -588,9 +659,15 @@ fn the_public_tunnel_overrides_the_egress_service_url() {
 #[test]
 fn named_instance_separates_browser_and_container_aws_endpoints() {
     let instance = Instance::derive(Some("image"), None).expect("named instance derives");
-    let env = LocalEnv::for_instance(Mode::Local, &instance, false, Tunnels::default())
-        .unwrap()
-        .to_env();
+    let env = LocalEnv::for_instance(
+        Mode::Local,
+        &instance,
+        false,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
     assert_eq!(env["LOCAL_AWS_URL"], "http://localstack:4566");
     assert_eq!(
         env["LOCAL_AWS_PUBLIC_URL"],
@@ -605,9 +682,15 @@ fn named_instance_separates_browser_and_container_aws_endpoints() {
 #[test]
 fn external_runtime_egress_respects_instance_host_ports_and_public_tunnels() {
     let instance = Instance::derive(Some("preview"), None).unwrap();
-    let env = LocalEnv::for_instance(Mode::Local, &instance, false, Tunnels::default())
-        .unwrap()
-        .to_env();
+    let env = LocalEnv::for_instance(
+        Mode::Local,
+        &instance,
+        false,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
     assert_eq!(
         env["EXTERNAL_EGRESS_BASE_URL"],
         format!(
@@ -627,6 +710,7 @@ fn external_runtime_egress_respects_instance_host_ports_and_public_tunnels() {
             egress: Some("https://egress.example.test"),
             ..Tunnels::default()
         },
+        &SelfHost::default(),
     )
     .unwrap()
     .to_env();
@@ -643,9 +727,15 @@ fn external_runtime_egress_respects_instance_host_ports_and_public_tunnels() {
 #[test]
 fn the_preview_ssh_proxy_host_is_empty_without_a_published_tunnel() {
     let instance = Instance::derive(Some("preview"), None).unwrap();
-    let env = LocalEnv::for_instance(Mode::Local, &instance, false, Tunnels::default())
-        .unwrap()
-        .to_env();
+    let env = LocalEnv::for_instance(
+        Mode::Local,
+        &instance,
+        false,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
     assert_eq!(env["PREVIEW_SSH_HOST"], "localhost");
     assert_eq!(env["PREVIEW_SSH_PROXY_HOST"], "");
 
@@ -657,6 +747,7 @@ fn the_preview_ssh_proxy_host_is_empty_without_a_published_tunnel() {
             preview_ssh: Some("odds-and-ends.trycloudflare.com"),
             ..Tunnels::default()
         },
+        &SelfHost::default(),
     )
     .unwrap()
     .to_env();
@@ -666,4 +757,68 @@ fn the_preview_ssh_proxy_host_is_empty_without_a_published_tunnel() {
     );
     // The on-machine endpoint stays first; the tunnel is a fallback, not a swap.
     assert_eq!(env["PREVIEW_SSH_HOST"], "localhost");
+}
+
+#[test]
+fn a_public_origin_replaces_every_browser_facing_localhost_url() {
+    let instance = Instance::derive(Some("public-origin"), None).unwrap();
+    let self_host = SelfHost::from_lookup(|key| {
+        match key {
+            "MACRO_PUBLIC_ORIGIN" => Some("https://macro.example.com"),
+            "MACRO_FUSIONAUTH_PUBLIC_URL" => Some("https://auth.macro.example.com"),
+            "MACRO_POSTGRES_PASSWORD" => Some("pg-secret"),
+            "INTERNAL_AUTH_KEY" => Some("deployed-internal-key"),
+            _ => None,
+        }
+        .map(str::to_owned)
+    });
+    let local =
+        LocalEnv::for_instance(Mode::Local, &instance, true, Tunnels::default(), &self_host)
+            .unwrap();
+    let mut env = local.boot_stub_env();
+    env.extend(local.to_env());
+
+    let origin = "https://macro.example.com";
+    assert_eq!(env["FRONTEND_ORIGIN"], origin);
+    assert_eq!(env["APP_BASE_URL"], origin);
+    assert_eq!(env["OVERRIDE_APP_SERVICE_URL"], origin);
+    assert_eq!(env["PIPEDREAM_ALLOWED_ORIGINS"], origin);
+    assert_eq!(
+        env["OVERRIDE_COGNITION_PUBLIC_URL"],
+        format!("{origin}/cognition")
+    );
+    assert_eq!(env["OVERRIDE_MCP_PUBLIC_URL"], format!("{origin}/mcp"));
+    assert_eq!(
+        env["OVERRIDE_STATIC_FILE_PUBLIC_URL"],
+        format!("{origin}/static-file")
+    );
+    assert_eq!(
+        env["LOCAL_AWS_PUBLIC_URL"],
+        format!("{origin}/local-storage")
+    );
+    assert_eq!(env["BASE_URL"], format!("{origin}/auth"));
+    assert_eq!(
+        env["FUSIONAUTH_OAUTH_REDIRECT_URI"],
+        format!("{origin}/auth/oauth/redirect")
+    );
+    assert_eq!(
+        env["FUSIONAUTH_PUBLIC_URL"],
+        "https://auth.macro.example.com"
+    );
+    assert_eq!(env["MACRO_PUBLIC_ORIGIN"], origin);
+
+    for key in ["DATABASE_URL", "DATABASE_URL_READONLY", "MACRO_DB_URL"] {
+        assert_eq!(env[key], "postgres://user:pg-secret@postgres:5432/macrodb");
+    }
+    for key in [
+        "INTERNAL_API_SECRET_KEY",
+        "INTERNAL_API_KEY",
+        "INTERNAL_AUTH_KEY",
+        "AUTHENTICATION_SERVICE_SECRET_KEY",
+        "SYNC_SERVICE_AUTH_KEY",
+        "SERVICE_INTERNAL_AUTH_KEY",
+        "DOCUMENT_STORAGE_SERVICE_AUTH_KEY",
+    ] {
+        assert_eq!(env[key], "deployed-internal-key", "{key}");
+    }
 }

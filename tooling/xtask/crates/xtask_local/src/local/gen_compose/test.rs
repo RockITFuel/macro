@@ -74,3 +74,78 @@ fn every_local_harness_publishes_the_api_port_used_by_the_sdk() {
         assert!(ports.contains(&format!("{}:2222", instance.port(Port::PreviewSsh))));
     }
 }
+
+#[test]
+fn self_host_binds_every_port_and_hands_over_the_database_passwords() {
+    let instance = Instance::derive(Some("bind-test"), None).unwrap();
+    let mut services = IndexMap::new();
+    for svc in services_for_mode(Mode::Local) {
+        services.insert(
+            svc.compose_name.to_string(),
+            Some(dct::Service {
+                ports: dct::Ports::Short(published_ports(Mode::Local, &instance, svc)),
+                ..Default::default()
+            }),
+        );
+    }
+    add_localstack_service(&mut services, &instance);
+    add_proxy_service(&mut services, &instance, true, true);
+    add_local_infra(&mut services, &instance, true);
+    let compose = dct::Compose {
+        services: dct::Services(services),
+        ..Default::default()
+    };
+    let mut value = serde_yaml::to_value(compose).unwrap();
+    apply_tags(&mut value, Mode::Local, &instance);
+    let self_host = SelfHost {
+        bind_address: Some("127.0.0.1".into()),
+        postgres_password: Some("pg-secret".into()),
+        fusionauth_db_password: Some("fa-secret".into()),
+        ..SelfHost::default()
+    };
+    apply_self_host(&mut value, &self_host);
+
+    let mut published = 0;
+    for (name, service) in value["services"].as_mapping().unwrap() {
+        let ports = match &service["ports"] {
+            Value::Tagged(tagged) => tagged.value.clone(),
+            ports => ports.clone(),
+        };
+        for port in ports.as_sequence().into_iter().flatten() {
+            let port = port.as_str().unwrap();
+            assert!(port.starts_with("127.0.0.1:"), "{name:?} publishes {port}");
+            published += 1;
+        }
+    }
+    assert!(published > 10, "only {published} ports checked");
+
+    let services = &value["services"];
+    assert_eq!(
+        services["postgres"]["environment"]["POSTGRES_PASSWORD"],
+        "${MACRO_POSTGRES_PASSWORD}"
+    );
+    assert_eq!(
+        services["db"]["environment"]["POSTGRES_PASSWORD"],
+        "${MACRO_FUSIONAUTH_DB_PASSWORD}"
+    );
+    assert_eq!(
+        services["fusionauth"]["environment"]["DATABASE_PASSWORD"],
+        "${MACRO_FUSIONAUTH_DB_PASSWORD}"
+    );
+}
+
+#[test]
+fn without_self_host_settings_the_override_is_unchanged() {
+    let instance = Instance::derive(Some("bind-default-test"), None).unwrap();
+    let mut services = IndexMap::new();
+    add_local_infra(&mut services, &instance, true);
+    let compose = dct::Compose {
+        services: dct::Services(services),
+        ..Default::default()
+    };
+    let mut value = serde_yaml::to_value(compose).unwrap();
+    apply_tags(&mut value, Mode::Local, &instance);
+    let before = value.clone();
+    apply_self_host(&mut value, &SelfHost::default());
+    assert_eq!(value, before);
+}

@@ -57,7 +57,7 @@ fn local_compose_flavor(instance: &Instance, mode: Mode, static_frontend: bool) 
         .merged
         .get("GMAIL_FORWARDER_SA_KEY")
         .is_some_and(|key| !key.trim().is_empty());
-    gen_compose::generate(mode, instance, &binaries, static_frontend, gmail_forwarder)?;
+    gen_compose::generate(mode, instance, &binaries, static_frontend, &resolved.merged)?;
 
     let files = gen_compose::compose_files(instance);
     let mut cmd = gen_compose::docker_compose(instance, &files, &resolved.generated_path);
@@ -256,11 +256,14 @@ fn local_env_flavor(
                     flavor_label(static_frontend),
                 ));
             }
-            let expected_frontend_origin = if static_frontend {
-                proxy::url(instance)
-            } else {
-                super::frontend::https_origin(instance)?
-            };
+            let expected_frontend_origin =
+                if let Some(origin) = super::self_host::SelfHost::from_env(env).public_origin {
+                    origin
+                } else if static_frontend {
+                    proxy::url(instance)
+                } else {
+                    super::frontend::https_origin(instance)?
+                };
             if env.get("FRONTEND_ORIGIN") != Some(&expected_frontend_origin) {
                 failures.push(format!(
                     "FRONTEND_ORIGIN={:?} does not match the {} origin {expected_frontend_origin}",

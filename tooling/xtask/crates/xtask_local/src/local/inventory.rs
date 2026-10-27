@@ -78,10 +78,12 @@ impl RustService {
     /// the features re-enabled alongside the dropped defaults.
     ///
     /// `authentication_service` opts into local passwordless code responses and
-    /// out of the login-code throttles; `search_processing_service` loses
-    /// `processing`/`service` with its defaults and its bin requires them.
-    pub fn local_features(&self) -> &'static [&'static str] {
+    /// out of the login-code throttles, except on a `public` stack, where
+    /// either would let anyone sign in as anyone; `search_processing_service`
+    /// loses `processing`/`service` with its defaults and its bin requires them.
+    pub fn local_features(&self, public: bool) -> &'static [&'static str] {
         match self.cargo_bin {
+            "authentication_service" if public => &[],
             "authentication_service" => &["return_passwordless_code", "no_rate_limit"],
             "search_processing_service" => &["processing", "service"],
             _ => &[],

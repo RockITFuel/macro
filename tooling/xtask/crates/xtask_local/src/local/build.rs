@@ -23,6 +23,9 @@ pub struct BuildOptions {
     pub no_build: bool,
     /// Use this directory as the `/app/out` source instead of building.
     pub binaries_dir: Option<std::path::PathBuf>,
+    /// Build for a public stack: without the local-only auth features (see
+    /// [`super::inventory::RustService::local_features`]).
+    pub public: bool,
 }
 
 /// Resolve a [`BinariesDir`] for the run: from `--binaries-dir`, from the
@@ -34,7 +37,7 @@ pub fn resolve(stage: &Stage, target: Target, opts: &BuildOptions) -> Result<Bin
             BinariesDir::classify(&super::workspace_root().join(target.debug_dir()))?
         }
         None => {
-            zigbuild::run(stage, target)?;
+            zigbuild::run(stage, target, opts.public)?;
             BinariesDir::classify(&super::workspace_root().join(target.debug_dir()))?
         }
     };

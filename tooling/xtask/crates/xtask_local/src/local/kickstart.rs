@@ -4,8 +4,9 @@
 //! declarative kickstart that FusionAuth applies once against an empty DB:
 //! API key, HS256 signing key, the (unlicensed) populate-JWT lambda, and the
 //! tenant and Macro application with fixed ids + a fixed client secret. Every
-//! id/secret is fixed (see `identity`) so services and FusionAuth always agree
-//! without any API read-back or patch step. The admin user is provisioned last
+//! id is fixed (see `identity`); the secrets are read from the resolved run env
+//! (see [`Secrets`]), so services and FusionAuth always agree without any API
+//! read-back or patch step. The admin user is provisioned last
 //! (after the app it registers against exists); passwordless login auto-creates
 //! all other users on demand.
 
@@ -14,6 +15,7 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use super::identity;
+use super::self_host::{self, SelfHost};
 
 #[cfg(test)]
 mod test;
@@ -105,14 +107,85 @@ impl GithubIdp {
     }
 }
 
+/// The secrets the kickstart writes into FusionAuth, read from the same
+/// resolved env the services get, so an `--env-file` override reaches both
+/// sides. Each falls back to its [`identity`] fixture.
+pub struct Secrets {
+    pub api_key: String,
+    pub jwt_secret: String,
+    pub client_secret: String,
+    pub internal_auth_key: String,
+    pub admin_password: String,
+}
+
+/// Password of the kickstart's FusionAuth admin user without an override.
+const ADMIN_PASSWORD: &str = "macroIsGreat!";
+
+impl Secrets {
+    pub fn from_env(env: &BTreeMap<String, String>) -> Self {
+        let get = |key: &str, fixture: &str| {
+            env.get(key)
+                .filter(|value| !value.is_empty())
+                .map_or_else(|| fixture.to_owned(), Clone::clone)
+        };
+        Secrets {
+            api_key: get(
+                "FUSIONAUTH_API_KEY_SECRET_KEY",
+                identity::FUSIONAUTH_API_KEY,
+            ),
+            jwt_secret: get("JWT_SECRET_KEY", identity::JWT_SECRET),
+            client_secret: get("FUSIONAUTH_CLIENT_SECRET_KEY", identity::CLIENT_SECRET),
+            internal_auth_key: get("INTERNAL_API_SECRET_KEY", identity::INTERNAL_AUTH_KEY),
+            admin_password: get(self_host::FUSIONAUTH_ADMIN_PASSWORD, ADMIN_PASSWORD),
+        }
+    }
+}
+
+/// The browser-facing URLs FusionAuth must accept as OAuth redirects.
+pub struct Redirects {
+    /// The app itself, for the post-login redirect.
+    pub app_url: String,
+    /// The auth service's OAuth callback (`FUSIONAUTH_OAUTH_REDIRECT_URI`).
+    pub oauth_redirect_uri: String,
+    /// Origins serving the proxy's MCP callback routes.
+    pub proxy_origins: Vec<String>,
+}
+
+impl Redirects {
+    /// The redirects for a stack: localhost ports and the given proxy origins,
+    /// or only the public origin when one is set. The auth service's callback
+    /// comes from the resolved env, which is what the service registers.
+    pub fn for_env(
+        env: &BTreeMap<String, String>,
+        frontend_port: u16,
+        auth_port: u16,
+        local_proxy_origins: Vec<String>,
+    ) -> Self {
+        let oauth_redirect_uri = env
+            .get("FUSIONAUTH_OAUTH_REDIRECT_URI")
+            .cloned()
+            .unwrap_or_else(|| identity::oauth_redirect_uri(auth_port));
+        match SelfHost::from_env(env).public_origin {
+            Some(origin) => Redirects {
+                app_url: format!("{origin}/app"),
+                oauth_redirect_uri,
+                proxy_origins: vec![origin],
+            },
+            None => Redirects {
+                app_url: format!("http://localhost:{frontend_port}/app"),
+                oauth_redirect_uri,
+                proxy_origins: local_proxy_origins,
+            },
+        }
+    }
+}
+
 /// Build the kickstart document. `lambda_body` is the JS source of
 /// `populate_jwt_local.js`; `reconcile_lambda_body` is the reconcile lambda
-/// attached to `google_gmail` (only used when `google` is configured); redirect
-/// URLs are templated from the instance ports.
+/// attached to `google_gmail` (only used when `google` is configured).
 pub fn build(
-    frontend_port: u16,
-    auth_port: u16,
-    proxy_origins: &[String],
+    redirects: &Redirects,
+    secrets: &Secrets,
     lambda_body: &str,
     reconcile_lambda_body: &str,
     google: Option<&GoogleIdp>,
@@ -125,13 +198,13 @@ pub fn build(
     let template_id = identity::PASSWORDLESS_EMAIL_TEMPLATE_ID;
 
     let mut redirect_urls = vec![
-        format!("http://localhost:{frontend_port}/app"),
-        identity::oauth_redirect_uri(auth_port),
+        redirects.app_url.clone(),
+        redirects.oauth_redirect_uri.clone(),
         "http://authentication-service:8080/oauth/redirect".to_string(),
     ];
     // The browser may use localhost or the machine hostname for this proxy.
     // Authorize the exact origins used by either local frontend mode.
-    for origin in proxy_origins {
+    for origin in &redirects.proxy_origins {
         for path in [
             "/cognition/mcp/servers/auth/callback",
             "/mcp/oauth/callback",
@@ -161,7 +234,7 @@ pub fn build(
                 "id": key_id,
                 "algorithm": "HS256",
                 "name": "Local JWT Signing Key",
-                "secret": identity::JWT_SECRET,
+                "secret": secrets.jwt_secret.as_str(),
                 "type": "HMAC",
             }}
         }),
@@ -258,7 +331,7 @@ pub fn build(
                 },
                 "oauthConfiguration": {
                     "clientId": app_id,
-                    "clientSecret": identity::CLIENT_SECRET,
+                    "clientSecret": secrets.client_secret.as_str(),
                     "enabledGrants": ["authorization_code", "refresh_token"],
                     "authorizedRedirectURLs": redirect_urls,
                     "authorizedURLValidationPolicy": "AllowWildcards",
@@ -286,7 +359,7 @@ pub fn build(
             "body": {
                 "user": {
                     "email": "admin@macro.com",
-                    "password": "macroIsGreat!",
+                    "password": secrets.admin_password.as_str(),
                 },
                 "registration": {
                     "applicationId": "3c219e58-ed0e-4b18-ad48-f4f92793ae32", // FusionAuth's reserved client application id
@@ -297,7 +370,7 @@ pub fn build(
         // 7. Webhooks: on user.create FusionAuth calls auth-service, which
         // registers the new user for the Macro app (so passwordless completes
         // with 200). `x-internal-auth-key` must equal the services'
-        // INTERNAL_API_SECRET_KEY (set to "local" in local mode).
+        // INTERNAL_API_SECRET_KEY, which is where `secrets` reads it from.
         json!({
             "method": "POST",
             "url": "/api/webhook",
@@ -312,7 +385,7 @@ pub fn build(
                     "user.create.complete": true,
                     "user.email.verified": true,
                 },
-                "headers": { "x-internal-auth-key": identity::INTERNAL_AUTH_KEY },
+                "headers": { "x-internal-auth-key": secrets.internal_auth_key.as_str() },
             }}
         }),
         json!({
@@ -325,7 +398,7 @@ pub fn build(
                 "url": "http://authentication-service:8080/webhooks/user/delete",
                 "global": true,
                 "eventsEnabled": { "user.delete.complete": true },
-                "headers": { "x-internal-auth-key": identity::INTERNAL_AUTH_KEY },
+                "headers": { "x-internal-auth-key": secrets.internal_auth_key.as_str() },
             }}
         }),
     ];
@@ -451,7 +524,7 @@ pub fn build(
 
     json!({
         "//": "GENERATED by xtask (cargo x run-local). Deterministic local FusionAuth bootstrap. Do not edit.",
-        "apiKeys": [ { "key": identity::FUSIONAUTH_API_KEY, "description": "Local Development API Key" } ],
+        "apiKeys": [ { "key": secrets.api_key.as_str(), "description": "Local Development API Key" } ],
         // `defaultTenantId` renames FusionAuth's built-in default tenant to our
         // fixed id at schema-creation time, so the tenant request above can
         // adopt it instead of creating a second tenant.

@@ -74,14 +74,21 @@ pub fn frontend_path_prefixes() -> Vec<&'static str> {
 /// against shared-dev) to the deployed gateway. The static-file block also
 /// differs (dev has no local LocalStack). With `static_frontend` the proxy also
 /// serves the built app bundle at `/app`, making it the one origin for the
-/// whole product.
-pub fn write_caddyfile(instance: &Instance, mode: Mode, static_frontend: bool) -> Result<PathBuf> {
+/// whole product. A `public` stack (see [`super::self_host`]) drops the
+/// development conveniences that would expose it: the Mailpit UI and the
+/// wildcard CORS.
+pub fn write_caddyfile(
+    instance: &Instance,
+    mode: Mode,
+    static_frontend: bool,
+    public: bool,
+) -> Result<PathBuf> {
     let path = caddyfile_path(instance);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("creating proxy dir {}", dir.display()))?;
     }
-    std::fs::write(&path, caddyfile(mode, static_frontend))
+    std::fs::write(&path, caddyfile(mode, static_frontend, public))
         .with_context(|| format!("writing {}", path.display()))?;
     Ok(path)
 }
@@ -90,13 +97,14 @@ pub fn write_caddyfile(instance: &Instance, mode: Mode, static_frontend: bool) -
 /// the generated per-service routes (from the inventory), the special
 /// non-inventory routes, the mode's static-file block, the optional
 /// static-frontend block, then the tail.
-fn caddyfile(mode: Mode, static_frontend: bool) -> String {
+fn caddyfile(mode: Mode, static_frontend: bool, public: bool) -> String {
     let static_block = if mode.spec().static_files_via_localstack {
         STATIC_FILE_LOCAL
     } else {
         STATIC_FILE_DEV
     };
-    let mailpit_block = if static_frontend && mode.spec().runs_local_infra {
+    // Mailpit holds every login code; a public stack must not serve it.
+    let mailpit_block = if static_frontend && mode.spec().runs_local_infra && !public {
         MAILPIT_ROUTE
     } else {
         ""
@@ -115,7 +123,14 @@ fn caddyfile(mode: Mode, static_frontend: bool) -> String {
     // it on Caddy so HTTPS and `*.localhost` origins work without touching
     // every service allowlist. `run_dev` still fans out to the shared-dev
     // gateway, so it keeps service CORS as-is.
-    let cors_block = if mode == Mode::Local { LOCAL_CORS } else { "" };
+    // A public stack serves the app from the same origin, so it needs no CORS,
+    // and reflecting any origin with credentials would let any site act as a
+    // signed-in user.
+    let cors_block = if mode == Mode::Local && !public {
+        LOCAL_CORS
+    } else {
+        ""
+    };
     // Sync actively rejects unknown origins, including HTTPS machine names,
     // before upgrading a socket. Local CORS is owned by this proxy; normalize
     // only the local worker's upstream origin to its existing dev allowlist.

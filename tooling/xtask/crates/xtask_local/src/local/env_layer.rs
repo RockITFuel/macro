@@ -24,6 +24,7 @@ use anyhow::{Context, Result, bail};
 
 use super::instance::Instance;
 use super::local_env::Tunnels;
+use super::self_host::{self, SelfHost};
 use super::{Mode, local_env};
 
 #[cfg(test)]
@@ -57,9 +58,24 @@ pub fn resolve(
     // has — unlike the old defaults.env, which Doppler overrode). Dev keeps
     // Doppler as-is.
     let spec = mode.spec();
+    // Read `--env-file` up front: the self-host settings in it (public origin,
+    // passwords, internal keys) shape the typed env below, which has to agree
+    // with them. It is still layered in at its usual precedence further down.
+    let mut file_env = BTreeMap::new();
+    if let Some(file) = env_file {
+        load_dotenv_into(file, &mut file_env)
+            .with_context(|| format!("loading --env-file {}", file.display()))?;
+    }
+    let self_host = SelfHost::from_lookup(|key| {
+        std::env::var(key)
+            .ok()
+            .or_else(|| file_env.get(key).cloned())
+    });
     let local = spec
         .overlay_local_env
-        .then(|| local_env::LocalEnv::for_instance(mode, instance, static_frontend, tunnels))
+        .then(|| {
+            local_env::LocalEnv::for_instance(mode, instance, static_frontend, tunnels, &self_host)
+        })
         .transpose()?;
     let mut env = BTreeMap::new();
     // Boot stubs go in FIRST so Doppler overrides them: they only exist to keep
@@ -118,10 +134,7 @@ pub fn resolve(
     }
 
     // `--env-file` overlay (the only dotenv we still parse).
-    if let Some(file) = env_file {
-        load_dotenv_into(file, &mut env)
-            .with_context(|| format!("loading --env-file {}", file.display()))?;
-    }
+    env.extend(file_env);
 
     // Process env — override only keys already present, so a developer can
     // `FOO=bar just run_local` without dumping their whole environment in.
@@ -143,6 +156,18 @@ pub fn resolve(
     if spec.uses_remote_aws {
         apply_dev_overrides(instance, &mut env);
         pull_aws_credentials(&mut env);
+    }
+    if spec.overlay_local_env {
+        let fixtures = local_env::LocalEnv::for_instance(
+            mode,
+            instance,
+            static_frontend,
+            tunnels,
+            &SelfHost::default(),
+        )?;
+        let mut fixture_env = fixtures.boot_stub_env();
+        fixture_env.extend(fixtures.to_env());
+        self_host::ensure_no_fixture_secrets(&env, &fixture_env)?;
     }
 
     let generated_path = instance.ensure_artifact_dir()?.join("local.generated.env");
@@ -273,6 +298,16 @@ fn pull_doppler(config: &str, env: &mut BTreeMap<String, String>) -> Result<bool
         env.insert(k, value);
     }
     Ok(true)
+}
+
+/// The instance's last generated env, or an empty map before its first run.
+pub fn read_generated(instance: &Instance) -> Result<BTreeMap<String, String>> {
+    let mut env = BTreeMap::new();
+    let path = instance.artifact_dir().join("local.generated.env");
+    if path.exists() {
+        load_dotenv_into(&path, &mut env)?;
+    }
+    Ok(env)
 }
 
 /// Parse a user-provided `--env-file` into `env` via `dotenvy` (the maintained

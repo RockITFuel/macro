@@ -12,10 +12,11 @@
 //! `serde_yaml`'s native tagged-value support — still structured data, no string
 //! munging.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Command;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use docker_compose_types as dct;
 use indexmap::IndexMap;
 use serde_yaml::Value;
@@ -24,6 +25,7 @@ use serde_yaml::value::{Tag, TaggedValue};
 use super::build::{BinariesDir, RUNTIME_IMAGE_TAG};
 use super::instance::{Instance, Port};
 use super::inventory::{RustService, services_for_mode};
+use super::self_host::{self, SelfHost};
 use super::{Mode, repo_root};
 
 #[cfg(test)]
@@ -70,14 +72,28 @@ pub fn tls_certs_dir() -> PathBuf {
 
 /// Build the override (typed model), apply the merge tags, and write it.
 /// `static_frontend` mounts the staged app bundle into the proxy (headless
-/// stacks serve the frontend from Caddy instead of a dev server).
+/// stacks serve the frontend from Caddy instead of a dev server). `env` is the
+/// run's resolved env: it gates the Gmail forwarder and carries the
+/// [`SelfHost`] bind address and database passwords.
 pub fn generate(
     mode: Mode,
     instance: &Instance,
     binaries: &BinariesDir,
     static_frontend: bool,
-    gmail_forwarder: bool,
+    env: &BTreeMap<String, String>,
 ) -> Result<PathBuf> {
+    let self_host = SelfHost::from_env(env);
+    if self_host.bind_address.is_some() && instance.is_default() {
+        // The default instance inherits the base compose's port lists, which
+        // the override cannot rebind without restating every one of them.
+        bail!(
+            "{} needs a named instance (--instance <name>)",
+            self_host::BIND_ADDRESS
+        );
+    }
+    let gmail_forwarder = env
+        .get("GMAIL_FORWARDER_SA_KEY")
+        .is_some_and(|key| !key.trim().is_empty());
     super::tls::issue(instance)?;
     let mut services: IndexMap<String, Option<dct::Service>> = IndexMap::new();
     let mounts = binaries.compose_mounts();
@@ -158,6 +174,7 @@ pub fn generate(
     // external network/volume definitions, which the schema can't represent.
     let mut value = serde_yaml::to_value(&compose).context("serializing compose override")?;
     apply_tags(&mut value, mode, instance);
+    apply_self_host(&mut value, &self_host);
     if mode.spec().runs_local_infra && !instance.is_default() {
         set_external_networks_and_volumes(&mut value, instance);
     }
@@ -500,6 +517,66 @@ fn apply_tags(value: &mut Value, mode: Mode, instance: &Instance) {
                 "options": { "max-size": "20m", "max-file": "3" }
             }))
             .expect("logging configuration is serializable"),
+        );
+    }
+}
+
+/// Apply the [`SelfHost`] settings: bind every published port to its address,
+/// and hand the database containers the overridden passwords. The passwords
+/// are interpolated from the generated env (where [`SelfHost::write`] put
+/// them) rather than written here, so they stay out of the override file.
+/// Postgres only reads them when it initializes an empty volume.
+fn apply_self_host(value: &mut Value, self_host: &SelfHost) {
+    let Some(services) = value.get_mut("services").and_then(Value::as_mapping_mut) else {
+        return;
+    };
+    if self_host.bind_address.is_some() {
+        for service in services.values_mut().filter_map(Value::as_mapping_mut) {
+            let ports = match service.get_mut("ports") {
+                Some(Value::Tagged(tagged)) => &mut tagged.value,
+                Some(ports) => ports,
+                None => continue,
+            };
+            for port in ports.as_sequence_mut().into_iter().flatten() {
+                // `host:container` gains the address; `ip:host:container`
+                // (the SSH relay's loopback binding) already has one.
+                if let Some(mapping) = port.as_str().filter(|p| p.matches(':').count() == 1) {
+                    *port = Value::from(self_host.publish(mapping.to_owned()));
+                }
+            }
+        }
+    }
+    let mut set_env = |service: &str, pairs: &[(&str, &str)]| {
+        let entry = services
+            .entry(Value::from(service))
+            .or_insert_with(|| Value::Mapping(serde_yaml::Mapping::new()));
+        if let Some(m) = entry.as_mapping_mut() {
+            let environment = m
+                .entry("environment".into())
+                .or_insert_with(|| Value::Mapping(serde_yaml::Mapping::new()));
+            if let Some(environment) = environment.as_mapping_mut() {
+                for (key, value) in pairs {
+                    environment.insert((*key).into(), (*value).into());
+                }
+            }
+        }
+    };
+    if self_host.postgres_password.is_some() {
+        let password = format!("${{{}}}", self_host::POSTGRES_PASSWORD);
+        set_env(
+            "postgres",
+            &[("POSTGRES_PASSWORD", &password), ("PGPASSWORD", &password)],
+        );
+    }
+    if self_host.fusionauth_db_password.is_some() {
+        let password = format!("${{{}}}", self_host::FUSIONAUTH_DB_PASSWORD);
+        set_env("db", &[("POSTGRES_PASSWORD", &password)]);
+        set_env(
+            "fusionauth",
+            &[
+                ("DATABASE_ROOT_PASSWORD", &password),
+                ("DATABASE_PASSWORD", &password),
+            ],
         );
     }
 }

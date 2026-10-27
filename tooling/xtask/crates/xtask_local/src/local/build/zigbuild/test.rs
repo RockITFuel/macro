@@ -13,7 +13,7 @@ fn only_services_that_drop_default_features_build_separately() {
 
 #[test]
 fn unified_args_pass_local_features_package_qualified() {
-    let args = unified_args();
+    let args = unified_args(false);
     let features = args
         .iter()
         .position(|a| a == "--features")
@@ -31,7 +31,7 @@ fn unified_args_pass_local_features_package_qualified() {
 
 #[test]
 fn unified_args_build_every_unified_service_bin() {
-    let args = unified_args();
+    let args = unified_args(false);
     for svc in unified_services() {
         assert!(
             args.windows(2)
@@ -48,7 +48,7 @@ fn unified_args_build_every_unified_service_bin() {
 fn isolated_args_use_their_own_target_dir() {
     let svc = isolated_services().next().expect("one isolated service");
     let dir = isolated_target_dir(Path::new("/ws"), svc);
-    let args = isolated_args(svc, &dir);
+    let args = isolated_args(svc, &dir, false);
     let target_dir = args
         .iter()
         .position(|a| a == "--target-dir")
@@ -67,4 +67,15 @@ fn isolated_target_dirs_do_not_collide() {
         .map(|svc| isolated_target_dir(Path::new("/ws"), svc))
         .collect();
     assert_eq!(dirs.len(), isolated_services().count());
+}
+
+#[test]
+fn a_public_build_drops_the_local_auth_shortcuts() {
+    let args = unified_args(true);
+    let features = args
+        .iter()
+        .position(|a| a == "--features")
+        .map(|i| args[i + 1].clone())
+        .unwrap_or_default();
+    assert!(!features.contains("authentication_service/"), "{features}");
 }

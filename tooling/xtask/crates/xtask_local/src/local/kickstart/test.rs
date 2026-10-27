@@ -40,9 +40,13 @@ fn google_idp_requires_a_real_client_secret() {
 #[test]
 fn kickstart_without_google_has_no_idp_requests() {
     let doc = build(
-        3000,
-        8080,
-        &["https://localhost:8085".to_string()],
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            3000,
+            8080,
+            vec!["https://localhost:8085".to_string()],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -67,9 +71,13 @@ fn kickstart_with_google_adds_lambda_and_both_idps_after_the_application() {
         client_secret: "GOCSPX-real".into(),
     };
     let doc = build(
-        3000,
-        8080,
-        &["https://localhost:8085".to_string()],
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            3000,
+            8080,
+            vec!["https://localhost:8085".to_string()],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
         "function populate() {}",
         "function reconcile() {}",
         Some(&google),
@@ -119,9 +127,13 @@ fn kickstart_with_google_adds_lambda_and_both_idps_after_the_application() {
 #[test]
 fn kickstart_adopts_the_default_tenant() {
     let doc = build(
-        3000,
-        8080,
-        &["https://localhost:8085".to_string()],
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            3000,
+            8080,
+            vec!["https://localhost:8085".to_string()],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -199,9 +211,13 @@ fn the_github_idp_id_follows_the_env_the_service_reads() {
     assert_eq!(github.idp_id, "c8014fe7-aeb4-4898-a460-4047e0fdf6d8");
 
     let doc = build(
-        3000,
-        8080,
-        &["https://localhost:8085".to_string()],
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            3000,
+            8080,
+            vec!["https://localhost:8085".to_string()],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -228,9 +244,13 @@ fn the_github_idp_is_created_under_both_the_name_and_the_id_the_service_uses() {
         idp_id: identity::GITHUB_IDP_ID.to_string(),
     };
     let doc = build(
-        3000,
-        8080,
-        &["https://localhost:8085".to_string()],
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            3000,
+            8080,
+            vec!["https://localhost:8085".to_string()],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -266,9 +286,13 @@ fn the_github_idp_is_created_under_both_the_name_and_the_id_the_service_uses() {
 #[test]
 fn kickstart_without_github_creates_no_github_idp() {
     let doc = build(
-        3000,
-        8080,
-        &["https://localhost:8085".to_string()],
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            3000,
+            8080,
+            vec!["https://localhost:8085".to_string()],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -288,9 +312,13 @@ fn kickstart_without_github_creates_no_github_idp() {
 
 fn authorized_redirects(frontend_port: u16, auth_port: u16, proxy_port: u16) -> Vec<String> {
     let doc = build(
-        frontend_port,
-        auth_port,
-        &[format!("https://localhost:{proxy_port}")],
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            frontend_port,
+            auth_port,
+            vec![format!("https://localhost:{proxy_port}")],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -337,12 +365,16 @@ fn agent_oauth_redirects_follow_the_instance_proxy_port() {
 #[test]
 fn agent_oauth_redirects_authorize_the_machine_hostname_and_loopback() {
     let doc = build(
-        3000,
-        8080,
-        &[
-            "https://localhost:8090".to_string(),
-            "https://devbox.example:8090".to_string(),
-        ],
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            3000,
+            8080,
+            vec![
+                "https://localhost:8090".to_string(),
+                "https://devbox.example:8090".to_string(),
+            ],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -365,4 +397,124 @@ fn agent_oauth_redirects_authorize_the_machine_hostname_and_loopback() {
         "https://devbox.example:8090/cognition/mcp/servers/auth/callback"
     )));
     assert!(redirects.contains(&json!("https://devbox.example:8090/mcp/oauth/callback")));
+}
+
+/// The kickstart and the services must hold the same secrets: an override in
+/// `--env-file` reaches the services through the typed env and FusionAuth
+/// through this document, both read from the one resolved env.
+#[test]
+fn kickstart_takes_secrets_from_the_resolved_env() {
+    use crate::local::Mode;
+    use crate::local::instance::Instance;
+    use crate::local::local_env::{LocalEnv, Tunnels};
+    use crate::local::self_host::SelfHost;
+
+    let self_host = SelfHost::from_env(&env(&[
+        ("INTERNAL_AUTH_KEY", "deployed-internal-key"),
+        ("FUSIONAUTH_API_KEY", "deployed-api-key"),
+        ("MACRO_FUSIONAUTH_ADMIN_PASSWORD", "deployed-admin-password"),
+    ]));
+    let instance = Instance::derive(Some("kickstart-secrets"), None).unwrap();
+    let mut resolved =
+        LocalEnv::for_instance(Mode::Local, &instance, true, Tunnels::default(), &self_host)
+            .unwrap()
+            .to_env();
+    // Single-name secrets come straight from `--env-file`.
+    resolved.insert("JWT_SECRET_KEY".into(), "deployed-jwt".into());
+    resolved.insert(
+        "FUSIONAUTH_CLIENT_SECRET_KEY".into(),
+        "deployed-client".into(),
+    );
+
+    let doc = build(
+        &Redirects::for_env(&resolved, 3000, 8080, vec![]),
+        &Secrets::from_env(&resolved),
+        "function populate() {}",
+        "function reconcile() {}",
+        None,
+        None,
+    );
+    let json = doc.to_string();
+    for fixture in [
+        identity::FUSIONAUTH_API_KEY,
+        identity::JWT_SECRET,
+        identity::CLIENT_SECRET,
+        "macroIsGreat!",
+    ] {
+        assert!(!json.contains(fixture), "fixture {fixture} leaked");
+    }
+    assert_eq!(
+        doc["apiKeys"][0]["key"],
+        resolved["FUSIONAUTH_API_KEY_SECRET_KEY"]
+    );
+    assert_eq!(
+        resolved["FUSIONAUTH_API_KEY_SECRET_KEY"],
+        "deployed-api-key"
+    );
+    let requests = doc["requests"].as_array().unwrap();
+    let body = |url: &str| {
+        requests
+            .iter()
+            .find(|request| request["url"].as_str().unwrap().starts_with(url))
+            .map(|request| &request["body"])
+            .unwrap()
+    };
+    assert_eq!(body("/api/key/import")["key"]["secret"], "deployed-jwt");
+    assert_eq!(
+        body("/api/application/")["application"]["oauthConfiguration"]["clientSecret"],
+        "deployed-client"
+    );
+    assert_eq!(
+        body("/api/user/registration")["user"]["password"],
+        "deployed-admin-password"
+    );
+    for webhook in requests.iter().filter(|r| r["url"] == "/api/webhook") {
+        assert_eq!(
+            webhook["body"]["webhook"]["headers"]["x-internal-auth-key"],
+            resolved["INTERNAL_API_SECRET_KEY"]
+        );
+    }
+    assert_eq!(resolved["INTERNAL_API_SECRET_KEY"], "deployed-internal-key");
+}
+
+#[test]
+fn a_public_origin_replaces_the_localhost_redirects() {
+    let resolved = env(&[
+        ("MACRO_PUBLIC_ORIGIN", "https://macro.example.com"),
+        (
+            "FUSIONAUTH_OAUTH_REDIRECT_URI",
+            "https://macro.example.com/auth/oauth/redirect",
+        ),
+    ]);
+    let doc = build(
+        &Redirects::for_env(&resolved, 3000, 8080, vec!["https://localhost:8090".into()]),
+        &Secrets::from_env(&resolved),
+        "function populate() {}",
+        "function reconcile() {}",
+        None,
+        None,
+    );
+    let application = doc["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["url"] == format!("/api/application/{}", identity::APPLICATION_ID))
+        .unwrap();
+    let redirects: Vec<&str> =
+        application["body"]["application"]["oauthConfiguration"]["authorizedRedirectURLs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|url| url.as_str().unwrap())
+            .collect();
+    assert_eq!(
+        redirects,
+        vec![
+            "https://macro.example.com/app",
+            "https://macro.example.com/auth/oauth/redirect",
+            "http://authentication-service:8080/oauth/redirect",
+            "https://macro.example.com/cognition/mcp/servers/auth/callback",
+            "https://macro.example.com/mcp/oauth/callback",
+        ]
+    );
 }

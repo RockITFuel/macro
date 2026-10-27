@@ -32,7 +32,7 @@ mod test;
 /// [`RustService::no_default_features`] as close to empty as the features allow.
 // xtask is host tooling; reading CARGO_BUILD_JOBS from the process env is correct.
 #[allow(clippy::disallowed_methods)]
-pub fn run(stage: &Stage, target: Target) -> Result<()> {
+pub fn run(stage: &Stage, target: Target, public: bool) -> Result<()> {
     ensure_target_installed(target)?;
 
     let ws = workspace_root();
@@ -48,7 +48,7 @@ pub fn run(stage: &Stage, target: Target) -> Result<()> {
         });
 
     let mut cmd = base_command(&ws, &zig_cache, &jobs, target);
-    cmd.args(unified_args());
+    cmd.args(unified_args(public));
     stage.run(
         &format!("Building service binaries ({})", target.triple),
         &mut cmd,
@@ -62,7 +62,7 @@ pub fn run(stage: &Stage, target: Target) -> Result<()> {
     for svc in isolated_services() {
         let target_dir = isolated_target_dir(&ws, svc);
         let mut cmd = base_command(&ws, &zig_cache, &jobs, target);
-        cmd.args(isolated_args(svc, &target_dir));
+        cmd.args(isolated_args(svc, &target_dir, public));
         stage.run(
             &format!("Building {} (no default features)", svc.cargo_bin),
             &mut cmd,
@@ -104,13 +104,13 @@ fn isolated_services() -> impl Iterator<Item = &'static RustService> {
 /// `--bin` per service plus one `--features` carrying every service's local
 /// features, package-qualified so a feature only reaches the package that
 /// declares it.
-fn unified_args() -> Vec<String> {
+fn unified_args(public: bool) -> Vec<String> {
     let mut args: Vec<String> = unified_services()
         .flat_map(|svc| ["--bin".to_owned(), svc.cargo_bin.to_owned()])
         .collect();
     let features: Vec<String> = unified_services()
         .flat_map(|svc| {
-            svc.local_features()
+            svc.local_features(public)
                 .iter()
                 .map(|f| format!("{}/{f}", svc.package))
         })
@@ -122,7 +122,7 @@ fn unified_args() -> Vec<String> {
     args
 }
 
-fn isolated_args(svc: &RustService, target_dir: &Path) -> Vec<String> {
+fn isolated_args(svc: &RustService, target_dir: &Path, public: bool) -> Vec<String> {
     let mut args = vec![
         "--target-dir".to_owned(),
         target_dir.display().to_string(),
@@ -132,7 +132,7 @@ fn isolated_args(svc: &RustService, target_dir: &Path) -> Vec<String> {
         "--bin".to_owned(),
         svc.cargo_bin.to_owned(),
     ];
-    let features = svc.local_features();
+    let features = svc.local_features(public);
     if !features.is_empty() {
         args.push("--features".to_owned());
         args.push(features.join(","));

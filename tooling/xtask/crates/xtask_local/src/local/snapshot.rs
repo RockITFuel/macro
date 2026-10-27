@@ -238,7 +238,7 @@ pub fn save(
     let mut fa = super::compose_cmd(instance, env);
     fa.args(["up", "-d", "fusionauth"]);
     stage.run("Restarting FusionAuth", &mut fa)?;
-    fusionauth::wait_ready(stage, instance)
+    fusionauth::wait_ready(stage, instance, &env.merged)
 }
 
 /// Run `tar` in the helper container with two mounts. The stack's own stage

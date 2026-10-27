@@ -31,7 +31,7 @@ fn vite_routes_cover_every_backend_prefix_and_no_frontend_routes() {
 /// the guarantee that replaces the old hand-maintained route list.
 #[test]
 fn generates_a_route_for_every_prefixed_service() {
-    let caddy = caddyfile(Mode::Local, false);
+    let caddy = caddyfile(Mode::Local, false, false);
     for svc in inventory::RUST_SERVICES {
         let Some(prefix) = svc.path_prefix else {
             continue;
@@ -52,7 +52,7 @@ fn generates_a_route_for_every_prefixed_service() {
 /// Local-only prefixed services fan out to the shared-dev gateway (no strip).
 #[test]
 fn dev_fans_local_only_prefixes_to_the_gateway() {
-    let caddy = caddyfile(Mode::Dev, false);
+    let caddy = caddyfile(Mode::Dev, false, false);
     for svc in inventory::RUST_SERVICES {
         let Some(prefix) = svc.path_prefix else {
             continue;
@@ -95,7 +95,7 @@ fn dev_fans_local_only_prefixes_to_the_gateway() {
 /// services use `handle_path`.
 #[test]
 fn websocket_services_use_a_matcher() {
-    let caddy = caddyfile(Mode::Local, false);
+    let caddy = caddyfile(Mode::Local, false, false);
     // connection-gateway is the inventoried WebSocket service.
     assert!(caddy.contains("@connection_gateway path /connection-gateway /connection-gateway/*"));
     assert!(caddy.contains("uri strip_prefix /connection-gateway"));
@@ -107,19 +107,19 @@ fn websocket_services_use_a_matcher() {
 /// (PostHog and OTLP traces/logs), un-stripped, on its own :8098 port.
 #[test]
 fn analytics_proxy_route_is_present() {
-    let caddy = caddyfile(Mode::Local, false);
+    let caddy = caddyfile(Mode::Local, false, false);
     assert!(caddy.contains("handle /i/* {"));
     assert!(caddy.contains("reverse_proxy analytics-proxy:8098"));
 }
 
 #[test]
 fn document_content_services_are_available_through_the_proxy() {
-    let caddy = caddyfile(Mode::Local, false);
+    let caddy = caddyfile(Mode::Local, false, false);
 
     assert!(caddy.contains("uri strip_prefix /sync"));
     assert!(caddy.contains("reverse_proxy sync-service:8787"));
     assert!(caddy.contains("header_up Origin http://localhost:3000"));
-    assert!(!caddyfile(Mode::Dev, false).contains("header_up Origin"));
+    assert!(!caddyfile(Mode::Dev, false, false).contains("header_up Origin"));
     assert!(caddy.contains("handle_path /lexical/*"));
     assert!(caddy.contains("reverse_proxy lexical-service:8096"));
     assert!(caddy.contains("handle_path /ai-editing/*"));
@@ -130,15 +130,15 @@ fn document_content_services_are_available_through_the_proxy() {
 /// fan-out locally, the dev-pointed service in dev.
 #[test]
 fn static_file_block_is_mode_specific() {
-    let local = caddyfile(Mode::Local, false);
+    let local = caddyfile(Mode::Local, false, false);
     assert!(local.contains("/static-file-storage"));
     // A route at site scope sorts after the Vite catch-all handle and loops.
     assert!(local.contains("handle_path /static-file/*"));
     assert!(!local.contains("route /static-file/*"));
-    assert!(caddyfile(Mode::Dev, false).contains("handle_path /static-file/*"));
-    assert!(!caddyfile(Mode::Dev, false).contains("/static-file-storage"));
+    assert!(caddyfile(Mode::Dev, false, false).contains("handle_path /static-file/*"));
+    assert!(!caddyfile(Mode::Dev, false, false).contains("/static-file-storage"));
     assert!(local.contains("handle_path /local-storage/*"));
-    assert!(!caddyfile(Mode::Dev, false).contains("handle_path /local-storage/*"));
+    assert!(!caddyfile(Mode::Dev, false, false).contains("handle_path /local-storage/*"));
 }
 
 /// Drift gate across the Rust↔TypeScript seam: every proxied service's prefix
@@ -170,14 +170,14 @@ fn frontend_wires_every_inventory_prefix() {
 /// forwards frontend requests to Vite instead of serving a bundle.
 #[test]
 fn static_frontend_block_is_opt_in() {
-    let headless = caddyfile(Mode::Local, true);
+    let headless = caddyfile(Mode::Local, true, false);
     assert!(headless.contains("handle_path /app/* {"));
     assert!(headless.contains("root * /srv/frontend"));
     assert!(headless.contains("try_files {path} /index.html"));
     assert!(headless.contains("redir / \"/app/?{query}\" 302"));
     assert!(headless.contains("handle /mailpit/*"));
 
-    let attached = caddyfile(Mode::Local, false);
+    let attached = caddyfile(Mode::Local, false, false);
     assert!(!attached.contains("/srv/frontend"));
     assert!(attached.contains("reverse_proxy host.docker.internal:{$VITE_PORT}"));
     assert!(attached.contains(&format!(
@@ -189,7 +189,7 @@ fn static_frontend_block_is_opt_in() {
     assert!(!attached.contains("redir / /app/ 302"));
     assert!(!attached.contains("handle /mailpit/*"));
 
-    let headless_dev = caddyfile(Mode::Dev, true);
+    let headless_dev = caddyfile(Mode::Dev, true, false);
     assert!(!headless_dev.contains("handle /mailpit/*"));
 }
 
@@ -197,14 +197,14 @@ fn static_frontend_block_is_opt_in() {
 #[test]
 fn vite_connection_limit_is_scoped_to_frontend() {
     for mode in [Mode::Local, Mode::Dev] {
-        let attached = caddyfile(mode, false);
+        let attached = caddyfile(mode, false, false);
         assert_eq!(attached.matches("max_conns_per_host").count(), 1);
         let (backend_routes, frontend_route) = attached
             .split_once("reverse_proxy host.docker.internal:{$VITE_PORT} {")
             .expect("attached frontend must proxy to Vite");
         assert!(!backend_routes.contains("max_conns_per_host"));
         assert!(frontend_route.contains("transport http {\n                max_conns_per_host 16"));
-        assert!(!caddyfile(mode, true).contains("max_conns_per_host"));
+        assert!(!caddyfile(mode, true, false).contains("max_conns_per_host"));
     }
 }
 
@@ -213,7 +213,7 @@ fn vite_connection_limit_is_scoped_to_frontend() {
 /// CORS, because it fans out to the shared-dev gateway.
 #[test]
 fn local_proxy_uses_tls_and_wildcard_cors() {
-    let local = caddyfile(Mode::Local, false);
+    let local = caddyfile(Mode::Local, false, false);
     assert!(local.contains("tls /etc/caddy/certs/server.pem /etc/caddy/certs/server-key.pem"));
     // Keep main's internal certificates for the separate preview listener.
     assert!(local.contains("auto_https disable_redirects"));
@@ -230,7 +230,7 @@ fn local_proxy_uses_tls_and_wildcard_cors() {
         "deferred -Access-Control-* deletes strip the CORS headers this overlay sets"
     );
 
-    let dev = caddyfile(Mode::Dev, false);
+    let dev = caddyfile(Mode::Dev, false, false);
     assert!(dev.contains("tls /etc/caddy/certs/server.pem /etc/caddy/certs/server-key.pem"));
     assert!(!dev.contains("@cors header Origin *"));
     assert!(!dev.contains("@cors_preflight"));
@@ -246,4 +246,17 @@ fn proxy_origin_is_https() {
         "checked-in CA is missing at {}",
         ca_pem().display()
     );
+}
+
+#[test]
+fn a_public_proxy_serves_neither_mailpit_nor_wildcard_cors() {
+    let local = caddyfile(Mode::Local, true, false);
+    assert!(local.contains("handle /mailpit/*"));
+    assert!(local.contains("Access-Control-Allow-Origin"));
+
+    let public = caddyfile(Mode::Local, true, true);
+    assert!(!public.contains("mailpit"));
+    assert!(!public.contains("Access-Control-Allow-Origin"));
+    assert!(public.contains("handle_path /app/*"));
+    assert!(public.contains("handle_path /auth/*"));
 }

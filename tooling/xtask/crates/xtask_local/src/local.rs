@@ -40,6 +40,7 @@ pub mod resources;
 pub mod sandbox_image;
 pub mod sdk_webhook;
 pub mod seed_env;
+pub mod self_host;
 pub mod snapshot;
 pub mod stack;
 pub mod stage;
@@ -158,6 +159,7 @@ use std::process::Command;
 use anyhow::Result;
 
 use instance::{Instance, Port};
+use self_host::SelfHost;
 use stage::Stage;
 
 /// Every non-Rust local service whose image is built from this repository.
@@ -540,6 +542,7 @@ fn run_rebuild(
                     &build::BuildOptions {
                         no_build: false,
                         binaries_dir: None,
+                        public: SelfHost::from_env(&env.merged).is_public(),
                     },
                 )
             });
@@ -560,6 +563,7 @@ fn run_rebuild(
             &build::BuildOptions {
                 no_build: false,
                 binaries_dir: None,
+                public: SelfHost::from_env(&env.merged).is_public(),
             },
         )?;
     }
@@ -705,6 +709,7 @@ fn prepare(
             &build::BuildOptions {
                 no_build: args.build.no_build,
                 binaries_dir: args.build.binaries_dir.clone(),
+                public: SelfHost::from_env(&env.merged).is_public(),
             },
         )?
     };
@@ -713,19 +718,18 @@ fn prepare(
     // through the proxy in every mode), and — for the self-contained local
     // stacks — the FusionAuth kickstart. (External networks/volumes are created
     // by the caller after the background teardown joins.)
-    let gmail_forwarder = env
-        .merged
-        .get("GMAIL_FORWARDER_SA_KEY")
-        .is_some_and(|key| !key.trim().is_empty());
-    gen_compose::generate(mode, instance, &binaries, static_frontend, gmail_forwarder)?;
-    proxy::write_caddyfile(instance, mode, static_frontend)?;
+    gen_compose::generate(mode, instance, &binaries, static_frontend, &env.merged)?;
+    proxy::write_caddyfile(
+        instance,
+        mode,
+        static_frontend,
+        SelfHost::from_env(&env.merged).is_public(),
+    )?;
     if mode == Mode::Local {
         portmap::write(instance)?;
     }
     if mode.spec().runs_local_infra {
-        let google = kickstart::GoogleIdp::from_env(&env.merged);
-        let github = kickstart::GithubIdp::from_env(&env.merged);
-        fusionauth::write_kickstart(instance, google.as_ref(), github.as_ref())?;
+        fusionauth::write_kickstart(instance, &env.merged)?;
     }
     if args.build.build_aux_services {
         build_aux_service_images(stage, instance, &env)?;
@@ -833,7 +837,7 @@ fn bring_up_infra(
 
     if spec.migrates_db && init == InfraInit::Full {
         // Postgres is ready (`--wait`); create + migrate the freshly-wiped DB.
-        db::migrate(stage, instance)?;
+        db::migrate(stage, instance, &env.merged)?;
     }
     if spec.runs_local_infra {
         // Kafka is healthy (`--wait` gates on its broker healthcheck); create
@@ -854,7 +858,7 @@ fn bring_up_infra(
         let mut fa = compose_cmd(instance, env);
         fa.arg("up").arg("-d").arg("fusionauth");
         stage.run("Starting FusionAuth", &mut fa)?;
-        fusionauth::wait_ready(stage, instance)?;
+        fusionauth::wait_ready(stage, instance, &env.merged)?;
 
         // OpenSearch is up (`--wait`) but empty. Create the search indices +
         // aliases (idempotent) so the unified search path works out of the box
@@ -1254,6 +1258,7 @@ pub fn zigbuild_only() -> Result<()> {
         &build::BuildOptions {
             no_build: false,
             binaries_dir: None,
+            public: false,
         },
     )?;
     stage.note(&format!("binaries at {}", binaries.host_dir().display()));
@@ -1271,7 +1276,13 @@ pub fn gen_compose_only(args: &cli::InstanceArgs) -> Result<()> {
     let instance = Instance::derive(args.instance.as_deref(), args.port_base)?;
     let target = arch::detect()?;
     let binaries = build::BinariesDir::TargetDir(workspace_root().join(target.debug_dir()));
-    let path = gen_compose::generate(Mode::Local, &instance, &binaries, false, false)?;
+    let path = gen_compose::generate(
+        Mode::Local,
+        &instance,
+        &binaries,
+        false,
+        &std::collections::BTreeMap::new(),
+    )?;
     println!("{}", path.display());
     Ok(())
 }

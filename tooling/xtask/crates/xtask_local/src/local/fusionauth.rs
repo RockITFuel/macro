@@ -1,11 +1,13 @@
 //! FusionAuth local bootstrap: generate the per-instance kickstart artifacts
 //! and wait for readiness. No Pulumi, no API read-back, no patch step.
 
+use std::collections::BTreeMap;
 use std::process::Command;
 
 use anyhow::{Context, Result};
 
 use super::instance::{Instance, Port};
+use super::self_host::SelfHost;
 use super::{frontend, gen_compose, identity, kickstart, proxy, stage::Stage};
 
 /// The FusionAuth lambda sources, read from the tracked templates at
@@ -26,28 +28,36 @@ fn read_lambda(file: xtask_paths::RepoFile<'static>) -> Result<String> {
 /// Generate `kickstart.json` into the instance's kickstart dir, which the
 /// FusionAuth container mounts. The kickstart is pure identity-provider config:
 /// run_local pre-seeds no users — passwordless login auto-creates any user on
-/// demand. `google` (from the resolved run env) additionally configures the
-/// `google`/`google_gmail` OIDC IdPs so the email connect flows work locally,
-/// and `github` the `github` IdP that `POST /link/github` resolves; the
+/// demand. A Google client in the resolved run `env` additionally configures
+/// the `google`/`google_gmail` OIDC IdPs so the email connect flows work
+/// locally, and a GitHub client the `github` IdP that `POST /link/github`
+/// resolves; the secrets and the public origin come from the same env. The
 /// generated file is gitignored, and the init-snapshot key hashes it, so
-/// adding/removing either client re-inits the stack automatically.
-pub fn write_kickstart(
-    instance: &Instance,
-    google: Option<&kickstart::GoogleIdp>,
-    github: Option<&kickstart::GithubIdp>,
-) -> Result<()> {
+/// changing any of them re-inits the stack automatically.
+pub fn write_kickstart(instance: &Instance, env: &BTreeMap<String, String>) -> Result<()> {
     let dir = gen_compose::kickstart_dir(instance);
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("creating kickstart dir {}", dir.display()))?;
 
+    let local_proxy_origins = if SelfHost::from_env(env).is_public() {
+        Vec::new()
+    } else {
+        vec![proxy::url(instance), frontend::https_origin(instance)?]
+    };
+    let google = kickstart::GoogleIdp::from_env(env);
+    let github = kickstart::GithubIdp::from_env(env);
     let doc = kickstart::build(
-        instance.port(Port::Frontend),
-        instance.port(Port::Auth),
-        &[proxy::url(instance), frontend::https_origin(instance)?],
+        &kickstart::Redirects::for_env(
+            env,
+            instance.port(Port::Frontend),
+            instance.port(Port::Auth),
+            local_proxy_origins,
+        ),
+        &kickstart::Secrets::from_env(env),
         &read_lambda(POPULATE_JWT_LAMBDA)?,
         &read_lambda(RECONCILE_LAMBDA)?,
-        google,
-        github,
+        google.as_ref(),
+        github.as_ref(),
     );
     let json = serde_json::to_string_pretty(&doc)? + "\n";
     std::fs::write(dir.join("kickstart.json"), json)
@@ -67,7 +77,11 @@ pub fn write_kickstart(
 /// bad snapshot was sticky. The fetch below succeeds only once the API key,
 /// the tenant, and the application all exist (the kickstart creates the
 /// application after the tenant).
-pub fn wait_ready(stage: &Stage, instance: &Instance) -> Result<()> {
+pub fn wait_ready(
+    stage: &Stage,
+    instance: &Instance,
+    env: &BTreeMap<String, String>,
+) -> Result<()> {
     let url = format!(
         "http://localhost:{}/api/application/{}",
         instance.port(Port::FusionAuth),
@@ -79,7 +93,7 @@ pub fn wait_ready(stage: &Stage, instance: &Instance) -> Result<()> {
     let script = format!(
         "for i in $(seq 1 480); do [ \"$(curl -sS -o /dev/null -w '%{{http_code}}' --max-time 3 -H 'Authorization: {key}' {url} 2>/dev/null)\" = 200 ] && exit 0; sleep 0.5; done; \
          echo 'timed out waiting for the FusionAuth kickstart (a 302 here means maintenance mode: FusionAuth could not reach its db)'; exit 1",
-        key = identity::FUSIONAUTH_API_KEY,
+        key = kickstart::Secrets::from_env(env).api_key,
     );
     let mut cmd = Command::new("bash");
     cmd.arg("-lc").arg(script);

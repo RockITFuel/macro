@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 
 use super::instance::{Instance, Port};
+use super::self_host::SelfHost;
 use super::{Mode, frontend, identity, proxy, resources};
 
 /// The public hostnames `--with-cf-tunnel` minted for this run.
@@ -68,6 +69,7 @@ pub struct LocalEnv {
     service_auth: ServiceAuthEnv,
     fusionauth: FusionAuthEnv,
     boot_stubs: BootStubEnv,
+    self_host: SelfHost,
 }
 
 impl LocalEnv {
@@ -80,11 +82,15 @@ impl LocalEnv {
     /// from outside the compose network, and the preview one lets that same
     /// agent reach this stack's SSH listener. Absent tunnels keep the
     /// in-network address and leave previews reachable on this machine only.
+    ///
+    /// `self_host` replaces the localhost origin with the public one and the
+    /// fixed database password and internal keys with the deployment's.
     pub fn for_instance(
         mode: Mode,
         instance: &Instance,
         static_frontend: bool,
         tunnels: Tunnels<'_>,
+        self_host: &SelfHost,
     ) -> Result<Self> {
         let name = instance.name();
         let frontend_port = if static_frontend {
@@ -92,12 +98,14 @@ impl LocalEnv {
         } else {
             instance.port(Port::Frontend)
         };
-        let frontend_origin = if static_frontend {
+        let frontend_origin = if let Some(origin) = &self_host.public_origin {
+            origin.clone()
+        } else if static_frontend {
             proxy::url(instance)
         } else {
             frontend::https_origin(instance)?
         };
-        let infra = InfraEnv::local(&frontend_origin);
+        let infra = InfraEnv::local(&frontend_origin, self_host);
         Ok(LocalEnv {
             // Both local flavors run against local infra (`local` env defaults).
             environment: mode.environment_var(),
@@ -120,9 +128,12 @@ impl LocalEnv {
             queues: QueueEnv::local(),
             mail: MailEnv::local(),
             agent_harness: AgentHarnessEnv::local(instance.project_name(), tunnels.egress),
-            service_auth: ServiceAuthEnv::for_instance(name),
-            fusionauth: FusionAuthEnv::for_instance(instance),
-            boot_stubs: BootStubEnv,
+            service_auth: ServiceAuthEnv::for_instance(name, self_host),
+            fusionauth: FusionAuthEnv::for_instance(instance, self_host),
+            boot_stubs: BootStubEnv {
+                macro_db_url: self_host.database_url("postgres:5432"),
+            },
+            self_host: self_host.clone(),
         })
     }
 
@@ -200,6 +211,7 @@ impl LocalEnv {
         self.agent_harness.write(&mut env);
         self.service_auth.write(&mut env);
         self.fusionauth.write(&mut env);
+        self.self_host.write(&mut env);
         env
     }
 
@@ -226,9 +238,9 @@ struct InfraEnv {
 }
 
 impl InfraEnv {
-    fn local(frontend_origin: &str) -> Self {
+    fn local(frontend_origin: &str, self_host: &SelfHost) -> Self {
         InfraEnv {
-            database_url: "postgres://user:password@postgres:5432/macrodb".into(),
+            database_url: self_host.database_url("postgres:5432"),
             redis_uri: "redis://redis:6379".into(),
             opensearch_url: "http://search:9200".into(),
             local_aws_url: "http://localstack:4566".into(),
@@ -545,16 +557,19 @@ impl AgentHarnessEnv {
 
 /// Internal service-to-service auth secrets. Deterministic per instance so every
 /// container (services, sync, lexical) agrees. `INTERNAL_API_SECRET_KEY` is the
-/// literal `"local"` to match the FusionAuth webhook's `x-internal-auth-key`.
+/// literal `"local"` (or the deployment's `INTERNAL_AUTH_KEY`), which the
+/// kickstart reads back for the FusionAuth webhook's `x-internal-auth-key`.
 struct ServiceAuthEnv {
+    internal_auth_key: String,
     doc_perm_jwt: String,
     internal_call: String,
     url_signing: String,
 }
 
 impl ServiceAuthEnv {
-    fn for_instance(name: &str) -> Self {
+    fn for_instance(name: &str, self_host: &SelfHost) -> Self {
         ServiceAuthEnv {
+            internal_auth_key: self_host.internal_auth_key().to_owned(),
             // Must match sync-service's local DOCUMENT_PERMISSIONS_SECRET
             // ("local") so locally-minted tokens verify. This is ONLY for local
             // dev use obv
@@ -568,23 +583,17 @@ impl ServiceAuthEnv {
         // The shared internal auth key — must match the kickstart webhook header.
         env.insert(
             "INTERNAL_API_SECRET_KEY".into(),
-            identity::INTERNAL_AUTH_KEY.into(),
+            self.internal_auth_key.clone(),
         );
-        env.insert(
-            "INTERNAL_API_KEY".into(),
-            identity::INTERNAL_AUTH_KEY.into(),
-        );
-        env.insert(
-            "INTERNAL_AUTH_KEY".into(),
-            identity::INTERNAL_AUTH_KEY.into(),
-        );
+        env.insert("INTERNAL_API_KEY".into(), self.internal_auth_key.clone());
+        env.insert("INTERNAL_AUTH_KEY".into(), self.internal_auth_key.clone());
         env.insert(
             "AUTHENTICATION_SERVICE_SECRET_KEY".into(),
-            identity::INTERNAL_AUTH_KEY.into(),
+            self.internal_auth_key.clone(),
         );
         env.insert(
             "SYNC_SERVICE_AUTH_KEY".into(),
-            identity::INTERNAL_AUTH_KEY.into(),
+            self.internal_auth_key.clone(),
         );
         // The key the authentication service presents on internal calls to
         // document storage (seeding starter docs at signup), the connection
@@ -596,11 +605,11 @@ impl ServiceAuthEnv {
         // every auth-service internal call 401s.
         env.insert(
             "SERVICE_INTERNAL_AUTH_KEY".into(),
-            identity::INTERNAL_AUTH_KEY.into(),
+            self.internal_auth_key.clone(),
         );
         env.insert(
             "DOCUMENT_STORAGE_SERVICE_AUTH_KEY".into(),
-            identity::INTERNAL_AUTH_KEY.into(),
+            self.internal_auth_key.clone(),
         );
         env.insert("DOCUMENT_PERMISSION_JWT".into(), self.doc_perm_jwt.clone());
         env.insert("INTERNAL_CALL_SECRET".into(), self.internal_call.clone());
@@ -619,14 +628,31 @@ struct FusionAuthEnv {
     /// code-owned env must too, or a `--no-doppler` stack's auth service dies
     /// at startup on the missing required value.
     base_url: String,
+    api_key: String,
 }
 
 impl FusionAuthEnv {
-    fn for_instance(instance: &Instance) -> Self {
+    /// On a public origin the auth service is reached through the proxy's
+    /// `/auth` route rather than its host port.
+    fn for_instance(instance: &Instance, self_host: &SelfHost) -> Self {
+        let (base_url, oauth_redirect_uri) = match &self_host.public_origin {
+            Some(origin) => (
+                format!("{origin}/auth"),
+                format!("{origin}/auth/oauth/redirect"),
+            ),
+            None => (
+                format!("http://localhost:{}", instance.port(Port::Auth)),
+                identity::oauth_redirect_uri(instance.port(Port::Auth)),
+            ),
+        };
         FusionAuthEnv {
-            oauth_redirect_uri: identity::oauth_redirect_uri(instance.port(Port::Auth)),
-            public_url: format!("http://localhost:{}", instance.port(Port::FusionAuth)),
-            base_url: format!("http://localhost:{}", instance.port(Port::Auth)),
+            oauth_redirect_uri,
+            public_url: self_host
+                .fusionauth_public_url
+                .clone()
+                .unwrap_or_else(|| format!("http://localhost:{}", instance.port(Port::FusionAuth))),
+            base_url,
+            api_key: self_host.fusionauth_api_key().to_owned(),
         }
     }
 
@@ -637,15 +663,9 @@ impl FusionAuthEnv {
             "http://fusionauth:9011".into(),
         );
         env.insert("FUSIONAUTH_PUBLIC_URL".into(), self.public_url.clone());
-        env.insert(
-            "FUSIONAUTH_API_KEY".into(),
-            identity::FUSIONAUTH_API_KEY.into(),
-        );
+        env.insert("FUSIONAUTH_API_KEY".into(), self.api_key.clone());
         // Canonical name read by auth_service (MacroConfig serde field) + seed_cli.
-        env.insert(
-            "FUSIONAUTH_API_KEY_SECRET_KEY".into(),
-            identity::FUSIONAUTH_API_KEY.into(),
-        );
+        env.insert("FUSIONAUTH_API_KEY_SECRET_KEY".into(), self.api_key.clone());
         env.insert(
             "FUSIONAUTH_CLIENT_ID".into(),
             identity::APPLICATION_ID.into(),
@@ -678,7 +698,9 @@ impl FusionAuthEnv {
 /// Doppler access keeps every real integration value. A key here must never
 /// also appear in [`LocalEnv::to_env`] — that would make precedence ambiguous
 /// (a test enforces this).
-struct BootStubEnv;
+struct BootStubEnv {
+    macro_db_url: String,
+}
 
 impl BootStubEnv {
     fn write(&self, env: &mut BTreeMap<String, String>) {
@@ -689,10 +711,7 @@ impl BootStubEnv {
         // hostname — see `redis::Client::open`).
         env.insert("REDIS_HOST".into(), "redis://redis:6379".into());
         // email_service / connection_gateway open their own Postgres pool.
-        env.insert(
-            "MACRO_DB_URL".into(),
-            "postgres://user:password@postgres:5432/macrodb".into(),
-        );
+        env.insert("MACRO_DB_URL".into(), self.macro_db_url.clone());
         // search_processing_service; the local cluster has the security plugin
         // disabled so these are accepted but ignored (same as opensearch.rs).
         // the harness cognition module mounts the Pipedream webhook when both
