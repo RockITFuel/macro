@@ -40,6 +40,10 @@ class WorkerConfig:
     # Run every transcription on one dedicated thread (MLX ties its streams
     # to the thread that created them).
     serialize_engine: bool = False
+    # Real-time factor the router assumes until this worker has measured its
+    # own; the engine's default was measured on luka-mini, so slower machines
+    # (Warsaw) set theirs or win jobs they are too slow for after a restart.
+    initial_rtf: float | None = None
 
 
 def machine_load() -> tuple[float, int]:
@@ -59,7 +63,7 @@ class Worker:
         self.queue = queue
         self.engine = engine
         self.cfg = cfg
-        self.rtf = engine.default_rtf
+        self.rtf = cfg.initial_rtf or engine.default_rtf
         self.rtt_s: float | None = None
         self.running = 0
         self.started_at = time.time()

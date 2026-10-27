@@ -64,6 +64,7 @@ async def _worker(args) -> None:
         max_cpu_load=args.max_cpu_load,
         min_free_mem_mb=args.min_free_mem_mb,
         download_dir=args.download_dir or None,
+        initial_rtf=args.initial_rtf or None,
         serialize_engine=engine.hardware == "mlx",
     )
     worker = Worker(queue_from_env(args.redis_url), engine, cfg)
@@ -161,6 +162,12 @@ def main(argv: list[str] | None = None) -> None:
         default=int(_env("LOCAL_STT_MIN_FREE_MEM_MB", "2048")),
     )
     worker.add_argument("--download-dir", default=_env("LOCAL_STT_DOWNLOAD_DIR", ""))
+    worker.add_argument(
+        "--initial-rtf",
+        type=float,
+        default=float(_env("LOCAL_STT_INITIAL_RTF", "0")),
+        help="speed estimate until measured (default: the engine's)",
+    )
 
     sub.add_parser("status")
 

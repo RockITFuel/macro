@@ -95,6 +95,7 @@ the others are away.
 | `LIVEKIT_TRANSCRIPTION_AGENT_NAME=macro-transcriber` | document storage service | Macro dispatches the agent to each call (needs `INTERNAL_CALL_SECRET`). |
 | `LOCAL_STT_ENGINE` | worker | `parakeet-onnx`, `parakeet-mlx`, `faster-whisper`. |
 | `LOCAL_STT_WORKER_ID`, `_THREADS`, `_MAX_CONCURRENCY`, `_PRIORITIES`, `_TIER`, `_MAX_CPU_LOAD`, `_MIN_FREE_MEM_MB`, `_DOWNLOAD_DIR`, `_PARAKEET_DIR` | worker | Routing inputs and resources; see `__main__.py`. |
+| `LOCAL_STT_INITIAL_RTF` | worker | Real-time factor the router assumes after a restart, until the worker has measured its own (default: the engine's, measured on luka-mini). Warsaw sets 0.2. |
 
 ## Rollout
 

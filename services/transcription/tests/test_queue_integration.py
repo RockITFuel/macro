@@ -223,6 +223,15 @@ class QueueIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(commands, ["BLMOVE", "EVALSHA"])
         self.assertEqual(await self.queue.in_flight("w"), 0)
 
+    async def test_a_configured_initial_rtf_replaces_the_engine_default(self):
+        engine = FakeEngine("x")
+        default = Worker(self.queue, engine, WorkerConfig(id="a", machine="a"))
+        seeded = Worker(
+            self.queue, engine, WorkerConfig(id="b", machine="b", initial_rtf=0.2)
+        )
+        self.assertEqual(default.info().rtf, round(engine.default_rtf, 4))
+        self.assertEqual(seeded.info().rtf, 0.2)
+
     async def _only_job_state(self):
         running = await self.queue.running()
         self.assertEqual(len(running), 1)

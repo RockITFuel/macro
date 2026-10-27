@@ -65,6 +65,10 @@ services:
       LOCAL_STT_PRIORITIES: live
       LOCAL_STT_TIER: "2"
       LOCAL_STT_MAX_CPU_LOAD: "0.5"
+      # Measured: ~0.2 on 4 EPYC 7351P cores. Without it the worker starts at
+      # the engine's luka-mini figure (0.04) and wins dictation it is 3x too
+      # slow for until its moving average catches up.
+      LOCAL_STT_INITIAL_RTF: "0.2"
     volumes:
       - models:/models
     networks: [stt]
