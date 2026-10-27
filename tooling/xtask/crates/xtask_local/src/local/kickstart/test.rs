@@ -47,6 +47,7 @@ fn kickstart_without_google_has_no_idp_requests() {
             vec!["https://localhost:8085".to_string()],
         ),
         &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -78,6 +79,7 @@ fn kickstart_with_google_adds_lambda_and_both_idps_after_the_application() {
             vec!["https://localhost:8085".to_string()],
         ),
         &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         Some(&google),
@@ -134,6 +136,7 @@ fn kickstart_adopts_the_default_tenant() {
             vec!["https://localhost:8085".to_string()],
         ),
         &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -218,6 +221,7 @@ fn the_github_idp_id_follows_the_env_the_service_reads() {
             vec!["https://localhost:8085".to_string()],
         ),
         &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -251,6 +255,7 @@ fn the_github_idp_is_created_under_both_the_name_and_the_id_the_service_uses() {
             vec!["https://localhost:8085".to_string()],
         ),
         &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -293,6 +298,7 @@ fn kickstart_without_github_creates_no_github_idp() {
             vec!["https://localhost:8085".to_string()],
         ),
         &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -319,6 +325,7 @@ fn authorized_redirects(frontend_port: u16, auth_port: u16, proxy_port: u16) -> 
             vec![format!("https://localhost:{proxy_port}")],
         ),
         &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -375,6 +382,7 @@ fn agent_oauth_redirects_authorize_the_machine_hostname_and_loopback() {
             ],
         ),
         &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -429,6 +437,7 @@ fn kickstart_takes_secrets_from_the_resolved_env() {
     let doc = build(
         &Redirects::for_env(&resolved, 3000, 8080, vec![]),
         &Secrets::from_env(&resolved),
+        &Mail::from_env(&resolved).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -489,6 +498,7 @@ fn a_public_origin_replaces_the_localhost_redirects() {
     let doc = build(
         &Redirects::for_env(&resolved, 3000, 8080, vec!["https://localhost:8090".into()]),
         &Secrets::from_env(&resolved),
+        &Mail::from_env(&resolved).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
         None,
@@ -516,5 +526,55 @@ fn a_public_origin_replaces_the_localhost_redirects() {
             "https://macro.example.com/cognition/mcp/servers/auth/callback",
             "https://macro.example.com/mcp/oauth/callback",
         ]
+    );
+}
+
+#[test]
+fn kickstart_sends_login_codes_through_the_configured_smtp_server() {
+    let local = Mail::from_env(&BTreeMap::new()).unwrap();
+    assert_eq!((local.host.as_str(), local.port), ("mailpit", 1025));
+
+    let resolved = env(&[
+        ("MACRO_SMTP_HOST", "smtp.mx.cloudflare.net"),
+        ("MACRO_SMTP_SECURITY", "SSL"),
+        ("MACRO_SMTP_USERNAME", "mailer"),
+        ("MACRO_SMTP_PASSWORD", "smtp-secret"),
+        ("MACRO_MAIL_FROM", "noreply@example.com"),
+        ("MACRO_MAIL_FROM_NAME", "Macro"),
+    ]);
+    let doc = build(
+        &Redirects::for_env(&resolved, 3000, 8080, vec![]),
+        &Secrets::from_env(&resolved),
+        &Mail::from_env(&resolved).unwrap(),
+        "function populate() {}",
+        "function reconcile() {}",
+        None,
+        None,
+    );
+    let requests = doc["requests"].as_array().unwrap();
+    let tenant = requests
+        .iter()
+        .find(|r| r["url"] == format!("/api/tenant/{}", identity::TENANT_ID))
+        .unwrap();
+    let email = &tenant["body"]["tenant"]["emailConfiguration"];
+    assert_eq!(email["host"], "smtp.mx.cloudflare.net");
+    assert_eq!(email["port"], 465);
+    assert_eq!(email["security"], "SSL");
+    assert_eq!(email["username"], "mailer");
+    assert_eq!(email["password"], "smtp-secret");
+    assert_eq!(email["defaultFromEmail"], "noreply@example.com");
+    assert_eq!(email["defaultFromName"], "Macro");
+    let template = requests
+        .iter()
+        .find(|r| {
+            r["url"]
+                .as_str()
+                .unwrap()
+                .starts_with("/api/email/template/")
+        })
+        .unwrap();
+    assert_eq!(
+        template["body"]["emailTemplate"]["fromEmail"],
+        "noreply@example.com"
     );
 }

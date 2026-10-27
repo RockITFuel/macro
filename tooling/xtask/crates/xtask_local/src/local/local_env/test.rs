@@ -822,3 +822,54 @@ fn a_public_origin_replaces_every_browser_facing_localhost_url() {
         assert_eq!(env[key], "deployed-internal-key", "{key}");
     }
 }
+
+#[test]
+fn a_configured_smtp_server_reaches_the_services() {
+    let instance = Instance::derive(Some("smtp-env"), None).unwrap();
+    let default = LocalEnv::for_instance(
+        Mode::Local,
+        &instance,
+        true,
+        Tunnels::default(),
+        &SelfHost::default(),
+    )
+    .unwrap()
+    .to_env();
+    assert_eq!(default["SMTP_HOST"], "mailpit");
+    assert_eq!(default["SMTP_PORT"], "1025");
+    for key in [
+        "SMTP_SECURITY",
+        "SMTP_USERNAME",
+        "SMTP_FROM",
+        "COOKIE_SAME_SITE",
+        "SIGNUP_ALLOWED_DOMAINS",
+    ] {
+        assert!(!default.contains_key(key), "{key}");
+    }
+
+    let self_host = SelfHost::from_lookup(|key| {
+        match key {
+            "MACRO_PUBLIC_ORIGIN" => Some("https://macro.example.com"),
+            "MACRO_SMTP_HOST" => Some("smtp.mx.cloudflare.net"),
+            "MACRO_SMTP_SECURITY" => Some("SSL"),
+            "MACRO_SMTP_USERNAME" => Some("mailer"),
+            "MACRO_SMTP_PASSWORD" => Some("smtp-secret"),
+            "MACRO_MAIL_FROM" => Some("noreply@example.com"),
+            "MACRO_MAIL_FROM_NAME" => Some("Macro"),
+            "MACRO_SIGNUP_ALLOWED_DOMAINS" => Some("example.com,example.org"),
+            _ => None,
+        }
+        .map(str::to_owned)
+    });
+    let env = LocalEnv::for_instance(Mode::Local, &instance, true, Tunnels::default(), &self_host)
+        .unwrap()
+        .to_env();
+    assert_eq!(env["SMTP_HOST"], "smtp.mx.cloudflare.net");
+    assert_eq!(env["SMTP_PORT"], "465");
+    assert_eq!(env["SMTP_SECURITY"], "SSL");
+    assert_eq!(env["SMTP_USERNAME"], "mailer");
+    assert_eq!(env["SMTP_PASSWORD"], "smtp-secret");
+    assert_eq!(env["SMTP_FROM"], "Macro <noreply@example.com>");
+    assert_eq!(env["COOKIE_SAME_SITE"], "Lax");
+    assert_eq!(env["SIGNUP_ALLOWED_DOMAINS"], "example.com,example.org");
+}

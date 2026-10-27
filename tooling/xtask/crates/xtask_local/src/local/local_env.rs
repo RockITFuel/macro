@@ -126,7 +126,7 @@ impl LocalEnv {
             infra,
             storage: StorageEnv::local(),
             queues: QueueEnv::local(),
-            mail: MailEnv::local(),
+            mail: MailEnv::for_self_host(self_host)?,
             agent_harness: AgentHarnessEnv::local(instance.project_name(), tunnels.egress),
             service_auth: ServiceAuthEnv::for_instance(name, self_host),
             fusionauth: FusionAuthEnv::for_instance(instance, self_host),
@@ -212,6 +212,15 @@ impl LocalEnv {
         self.service_auth.write(&mut env);
         self.fusionauth.write(&mut env);
         self.self_host.write(&mut env);
+        // Read by the auth service. A public origin serves the app and the
+        // auth service from one site, so its session cookies need not be
+        // sent cross-site.
+        if self.self_host.is_public() {
+            env.insert("COOKIE_SAME_SITE".into(), "Lax".into());
+        }
+        if let Some(domains) = &self.self_host.signup_allowed_domains {
+            env.insert("SIGNUP_ALLOWED_DOMAINS".into(), domains.clone());
+        }
         env
     }
 
@@ -452,25 +461,53 @@ impl QueueEnv {
     }
 }
 
-/// Mail: SES sends are routed to Mailpit SMTP (see the `ses_client` transport).
+/// Mail: SES sends are routed to SMTP (see the `ses_client` transport):
+/// Mailpit, or the self-hosted instance's server with its TLS, login and
+/// sender (`SMTP_SECURITY`/`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM`).
 struct MailEnv {
-    smtp_host: &'static str,
-    smtp_port: &'static str,
+    smtp_host: String,
+    smtp_port: u16,
+    /// `(key, value)` for the settings only a real server needs.
+    server: Vec<(&'static str, String)>,
     sender_base_address: &'static str,
 }
 
 impl MailEnv {
-    fn local() -> Self {
-        MailEnv {
-            smtp_host: "mailpit",
-            smtp_port: "1025",
-            sender_base_address: "macro.local",
+    fn for_self_host(self_host: &SelfHost) -> Result<Self> {
+        let Some(smtp) = self_host.smtp()? else {
+            return Ok(MailEnv {
+                smtp_host: "mailpit".into(),
+                smtp_port: 1025,
+                server: Vec::new(),
+                sender_base_address: "macro.local",
+            });
+        };
+        let mut server = vec![("SMTP_SECURITY", smtp.security.to_owned())];
+        if let (Some(username), Some(password)) = (smtp.username, smtp.password) {
+            server.push(("SMTP_USERNAME", username.to_owned()));
+            server.push(("SMTP_PASSWORD", password.to_owned()));
         }
+        if let Some(from) = &self_host.mail_from {
+            let from = match &self_host.mail_from_name {
+                Some(name) => format!("{name} <{from}>"),
+                None => from.clone(),
+            };
+            server.push(("SMTP_FROM", from));
+        }
+        Ok(MailEnv {
+            smtp_host: smtp.host.to_owned(),
+            smtp_port: smtp.port,
+            server,
+            sender_base_address: "macro.local",
+        })
     }
 
     fn write(&self, env: &mut BTreeMap<String, String>) {
-        env.insert("SMTP_HOST".into(), self.smtp_host.into());
-        env.insert("SMTP_PORT".into(), self.smtp_port.into());
+        env.insert("SMTP_HOST".into(), self.smtp_host.clone());
+        env.insert("SMTP_PORT".into(), self.smtp_port.to_string());
+        for (key, value) in &self.server {
+            env.insert((*key).into(), value.clone());
+        }
         env.insert(
             "SENDER_BASE_ADDRESS".into(),
             self.sender_base_address.into(),

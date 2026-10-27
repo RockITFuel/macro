@@ -2,6 +2,7 @@
 //! backend to be reachable through the proxy, then launch Vite pointed
 //! at the proxy origin.
 
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
@@ -63,7 +64,15 @@ pub fn static_dir(instance: &Instance) -> std::path::PathBuf {
 /// otherwise compiles DEV from `NODE_ENV=production`, which drops local-only
 /// paths such as passwordless auto-login (`just run_local` uses `vite serve`,
 /// where DEV is already true). Headless `stack up` sets the same origin env.
-pub fn build_static(stage: &Stage, instance: &Instance, mode: Mode) -> Result<()> {
+///
+/// `github_login` adds "Continue with GitHub" to the sign-in page; see
+/// [`github_login`].
+pub fn build_static(
+    stage: &Stage,
+    instance: &Instance,
+    mode: Mode,
+    github_login: bool,
+) -> Result<()> {
     let dist = {
         let mut cmd = Command::new("bun");
         cmd.current_dir(app_dir())
@@ -74,6 +83,9 @@ pub fn build_static(stage: &Stage, instance: &Instance, mode: Mode) -> Result<()
             .env("VITE_LOCAL_BACKEND_ORIGIN", "same-origin");
         if mode.spec().runs_local_infra {
             cmd.env("VITE_AI_EDITING_WORKER_URL", "/ai-editing");
+        }
+        if github_login {
+            cmd.env("VITE_ENABLE_GITHUB_LOGIN", "true");
         }
         stage.run("Building frontend bundle", &mut cmd)?;
         app_dir().join("dist")
@@ -103,6 +115,12 @@ pub fn build_static(stage: &Stage, instance: &Instance, mode: Mode) -> Result<()
         anyhow::ensure!(status.success(), "cp -a exited with {status}");
         Ok(())
     })
+}
+
+/// Whether the resolved env configures a real GitHub client, which is when
+/// the kickstart creates the `github` identity provider sign-in goes through.
+pub fn github_login(env: &BTreeMap<String, String>) -> bool {
+    super::kickstart::GithubIdp::from_env(env).is_some()
 }
 
 /// The env the dev server runs with. Both local and dev point the whole app at

@@ -54,6 +54,7 @@ pub fn write_kickstart(instance: &Instance, env: &BTreeMap<String, String>) -> R
             local_proxy_origins,
         ),
         &kickstart::Secrets::from_env(env),
+        &kickstart::Mail::from_env(env)?,
         &read_lambda(POPULATE_JWT_LAMBDA)?,
         &read_lambda(RECONCILE_LAMBDA)?,
         google.as_ref(),

@@ -29,6 +29,21 @@ pub const POSTGRES_PASSWORD: &str = "MACRO_POSTGRES_PASSWORD";
 pub const FUSIONAUTH_DB_PASSWORD: &str = "MACRO_FUSIONAUTH_DB_PASSWORD";
 /// Password of the FusionAuth admin user the kickstart creates.
 pub const FUSIONAUTH_ADMIN_PASSWORD: &str = "MACRO_FUSIONAUTH_ADMIN_PASSWORD";
+/// SMTP server for FusionAuth's login codes and the services' own mail.
+/// Unset, both deliver to Mailpit.
+pub const SMTP_HOST: &str = "MACRO_SMTP_HOST";
+/// SMTP port; defaults to 465 for `SSL`, 587 for `TLS` and 25 for `NONE`.
+pub const SMTP_PORT: &str = "MACRO_SMTP_PORT";
+/// `SSL` (implicit TLS), `TLS` (STARTTLS) or `NONE`, as FusionAuth names them.
+pub const SMTP_SECURITY: &str = "MACRO_SMTP_SECURITY";
+pub const SMTP_USERNAME: &str = "MACRO_SMTP_USERNAME";
+pub const SMTP_PASSWORD: &str = "MACRO_SMTP_PASSWORD";
+/// Sender address of all mail, e.g. `noreply@example.com`.
+pub const MAIL_FROM: &str = "MACRO_MAIL_FROM";
+/// Sender display name.
+pub const MAIL_FROM_NAME: &str = "MACRO_MAIL_FROM_NAME";
+/// Comma-separated email domains allowed to create an account.
+pub const SIGNUP_ALLOWED_DOMAINS: &str = "MACRO_SIGNUP_ALLOWED_DOMAINS";
 
 /// The internal service key, written under every name a service reads it by
 /// and into the FusionAuth webhook headers.
@@ -39,13 +54,21 @@ pub const FUSIONAUTH_API_KEY: &str = "FUSIONAUTH_API_KEY";
 
 /// The settings that exist only here; the two keys above are written by
 /// [`super::local_env::LocalEnv`] under each of their names.
-const KEYS: [&str; 6] = [
+const KEYS: [&str; 14] = [
     PUBLIC_ORIGIN,
     FUSIONAUTH_PUBLIC_URL,
     BIND_ADDRESS,
     POSTGRES_PASSWORD,
     FUSIONAUTH_DB_PASSWORD,
     FUSIONAUTH_ADMIN_PASSWORD,
+    SMTP_HOST,
+    SMTP_PORT,
+    SMTP_SECURITY,
+    SMTP_USERNAME,
+    SMTP_PASSWORD,
+    MAIL_FROM,
+    MAIL_FROM_NAME,
+    SIGNUP_ALLOWED_DOMAINS,
 ];
 
 /// Today's Postgres password, baked into `docker/docker-compose-databases.yml`.
@@ -62,6 +85,25 @@ pub struct SelfHost {
     pub fusionauth_admin_password: Option<String>,
     pub internal_auth_key: Option<String>,
     pub fusionauth_api_key: Option<String>,
+    pub smtp_host: Option<String>,
+    pub smtp_port: Option<String>,
+    pub smtp_security: Option<String>,
+    pub smtp_username: Option<String>,
+    pub smtp_password: Option<String>,
+    pub mail_from: Option<String>,
+    pub mail_from_name: Option<String>,
+    pub signup_allowed_domains: Option<String>,
+}
+
+/// A configured SMTP server, as FusionAuth and the services both use it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Smtp<'a> {
+    pub host: &'a str,
+    pub port: u16,
+    /// `SSL`, `TLS` or `NONE`.
+    pub security: &'static str,
+    pub username: Option<&'a str>,
+    pub password: Option<&'a str>,
 }
 
 impl SelfHost {
@@ -79,7 +121,55 @@ impl SelfHost {
             fusionauth_admin_password: get(FUSIONAUTH_ADMIN_PASSWORD),
             internal_auth_key: get(INTERNAL_AUTH_KEY),
             fusionauth_api_key: get(FUSIONAUTH_API_KEY),
+            smtp_host: get(SMTP_HOST),
+            smtp_port: get(SMTP_PORT),
+            smtp_security: get(SMTP_SECURITY),
+            smtp_username: get(SMTP_USERNAME),
+            smtp_password: get(SMTP_PASSWORD),
+            mail_from: get(MAIL_FROM),
+            mail_from_name: get(MAIL_FROM_NAME),
+            signup_allowed_domains: get(SIGNUP_ALLOWED_DOMAINS),
         }
+    }
+
+    /// The configured SMTP server, or `None` for Mailpit. Fails on a port or
+    /// security value FusionAuth would reject, or half a login.
+    pub fn smtp(&self) -> Result<Option<Smtp<'_>>> {
+        let Some(host) = self.smtp_host.as_deref() else {
+            return Ok(None);
+        };
+        let security = match self
+            .smtp_security
+            .as_deref()
+            .map(str::to_ascii_uppercase)
+            .as_deref()
+        {
+            Some("SSL") => "SSL",
+            Some("TLS") => "TLS",
+            Some("NONE") | None => "NONE",
+            Some(_) => bail!("{SMTP_SECURITY} must be SSL, TLS or NONE"),
+        };
+        let port = match self.smtp_port.as_deref() {
+            Some(port) => port
+                .trim()
+                .parse()
+                .map_err(|_| anyhow::anyhow!("{SMTP_PORT} must be a port number"))?,
+            None => match security {
+                "SSL" => 465,
+                "TLS" => 587,
+                _ => 25,
+            },
+        };
+        if self.smtp_username.is_some() != self.smtp_password.is_some() {
+            bail!("{SMTP_USERNAME} and {SMTP_PASSWORD} must be set together");
+        }
+        Ok(Some(Smtp {
+            host,
+            port,
+            security,
+            username: self.smtp_username.as_deref(),
+            password: self.smtp_password.as_deref(),
+        }))
     }
 
     /// Read the settings back from a resolved env.
@@ -138,6 +228,14 @@ impl SelfHost {
             &self.postgres_password,
             &self.fusionauth_db_password,
             &self.fusionauth_admin_password,
+            &self.smtp_host,
+            &self.smtp_port,
+            &self.smtp_security,
+            &self.smtp_username,
+            &self.smtp_password,
+            &self.mail_from,
+            &self.mail_from_name,
+            &self.signup_allowed_domains,
         ];
         for (key, value) in KEYS.into_iter().zip(values) {
             if let Some(value) = value {
@@ -147,15 +245,23 @@ impl SelfHost {
     }
 }
 
-/// Refuse a public stack that still carries a checked-in local secret: each
-/// of these lets anyone who reads this repository sign in as, or act for, any
-/// user. `fixtures` is the env the stack would have without overrides.
-pub fn ensure_no_fixture_secrets(
-    env: &BTreeMap<String, String>,
-    fixtures: &BTreeMap<String, String>,
-) -> Result<()> {
-    if !SelfHost::from_env(env).is_public() {
+/// Check the settings before anything is generated from them. A public stack
+/// must also deliver real mail and must not carry a checked-in local secret:
+/// each of those lets anyone who reads this repository sign in as, or act
+/// for, any user. `fixtures` is the env the stack would have without
+/// overrides.
+pub fn check(env: &BTreeMap<String, String>, fixtures: &BTreeMap<String, String>) -> Result<()> {
+    let self_host = SelfHost::from_env(env);
+    let smtp = self_host.smtp()?;
+    if !self_host.is_public() {
         return Ok(());
+    }
+    if smtp.is_none() || self_host.mail_from.is_none() {
+        bail!(
+            "{PUBLIC_ORIGIN} is set but mail would only reach the local Mailpit; \
+             set {SMTP_HOST}, {SMTP_PORT}, {SMTP_SECURITY}, {SMTP_USERNAME}, {SMTP_PASSWORD} \
+             and {MAIL_FROM} in --env-file"
+        );
     }
     let mut fixed: Vec<&str> = PUBLIC_SECRETS
         .iter()

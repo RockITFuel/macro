@@ -183,12 +183,13 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
     // joined just before `bring_up_app` creates that container. (Dry run:
     // synchronously, so the command preview prints in order.)
     if static_frontend && stage.is_dry_run() {
-        frontend::build_static(&stage, &instance, mode)?;
+        frontend::build_static(&stage, &instance, mode, frontend::github_login(&env.merged))?;
     }
     let fe_build = (static_frontend && !stage.is_dry_run()).then(|| {
         let instance = instance.clone();
         let stage = stage.background();
-        std::thread::spawn(move || frontend::build_static(&stage, &instance, mode))
+        let github_login = frontend::github_login(&env.merged);
+        std::thread::spawn(move || frontend::build_static(&stage, &instance, mode, github_login))
     });
 
     // The init snapshot decision: hash the init-defining inputs (possible only
@@ -461,7 +462,7 @@ fn reload_static_frontend(
              re-run `just stack up` to serve one"
         );
     }
-    frontend::build_static(stage, instance, mode)?;
+    frontend::build_static(stage, instance, mode, frontend::github_login(&env.merged))?;
     // build_static replaces the staged directory, so the container must be
     // recreated to establish a bind mount to the new inode.
     let mut up = super::compose_cmd(instance, env);

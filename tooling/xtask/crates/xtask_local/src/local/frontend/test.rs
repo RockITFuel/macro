@@ -126,3 +126,19 @@ fn failed_restart_reports_output_and_releases_the_port() {
     assert!(error.to_string().contains("vite-startup-failed"));
     assert!(TcpStream::connect(("127.0.0.1", frontend.port)).is_err());
 }
+
+#[test]
+fn github_login_follows_a_real_github_client() {
+    let env = |id: &str, secret: &str| {
+        BTreeMap::from([
+            ("GITHUB_CLIENT_ID".to_string(), id.to_string()),
+            ("GITHUB_CLIENT_SECRET".to_string(), secret.to_string()),
+        ])
+    };
+    assert!(!github_login(&BTreeMap::new()));
+    assert!(!github_login(&env(
+        "local-github-client",
+        "local-github-client-secret"
+    )));
+    assert!(github_login(&env("Iv1.realclient", "real-secret")));
+}

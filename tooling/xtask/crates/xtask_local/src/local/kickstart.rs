@@ -141,6 +141,51 @@ impl Secrets {
     }
 }
 
+/// The SMTP server FusionAuth sends its login codes through: Mailpit, or the
+/// self-hosted instance's server (see [`SelfHost::smtp`]).
+pub struct Mail {
+    pub host: String,
+    pub port: u16,
+    /// `SSL`, `TLS` or `NONE`.
+    pub security: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub from_email: String,
+    pub from_name: String,
+}
+
+impl Mail {
+    pub fn from_env(env: &BTreeMap<String, String>) -> anyhow::Result<Self> {
+        let self_host = SelfHost::from_env(env);
+        let Some(smtp) = self_host.smtp()? else {
+            return Ok(Mail {
+                host: "mailpit".into(),
+                port: 1025,
+                security: "NONE".into(),
+                username: None,
+                password: None,
+                from_email: identity::MAIL_FROM.into(),
+                from_name: "Macro Local".into(),
+            });
+        };
+        Ok(Mail {
+            host: smtp.host.to_owned(),
+            port: smtp.port,
+            security: smtp.security.to_owned(),
+            username: smtp.username.map(str::to_owned),
+            password: smtp.password.map(str::to_owned),
+            from_email: self_host
+                .mail_from
+                .clone()
+                .unwrap_or_else(|| identity::MAIL_FROM.into()),
+            from_name: self_host
+                .mail_from_name
+                .clone()
+                .unwrap_or_else(|| "Macro".into()),
+        })
+    }
+}
+
 /// The browser-facing URLs FusionAuth must accept as OAuth redirects.
 pub struct Redirects {
     /// The app itself, for the post-login redirect.
@@ -186,6 +231,7 @@ impl Redirects {
 pub fn build(
     redirects: &Redirects,
     secrets: &Secrets,
+    mail: &Mail,
     lambda_body: &str,
     reconcile_lambda_body: &str,
     google: Option<&GoogleIdp>,
@@ -214,6 +260,19 @@ pub fn build(
                 redirect_urls.push(callback);
             }
         }
+    }
+
+    let mut email_configuration = json!({
+        "host": mail.host.as_str(),
+        "port": mail.port,
+        "security": mail.security.as_str(),
+        "defaultFromEmail": mail.from_email.as_str(),
+        "defaultFromName": mail.from_name.as_str(),
+        "passwordlessEmailTemplateId": template_id,
+    });
+    if let (Some(username), Some(password)) = (&mail.username, &mail.password) {
+        email_configuration["username"] = json!(username);
+        email_configuration["password"] = json!(password);
     }
 
     // Kickstart executes these in order, so each request must come after the
@@ -261,7 +320,7 @@ pub fn build(
                 "defaultSubject": "Your Macro login code",
                 "defaultHtmlTemplate": "<p>Your Macro login code:</p><h1>${code}</h1>",
                 "defaultTextTemplate": "Your Macro login code: ${code}",
-                "fromEmail": identity::MAIL_FROM,
+                "fromEmail": mail.from_email.as_str(),
             }}
         }),
         // 4. Tenant — with SMTP pointed at Mailpit + the passwordless template,
@@ -294,14 +353,7 @@ pub fn build(
                     "refreshTokenTimeToLiveInMinutes": 43200,
                     "timeToLiveInSeconds": 3600,
                 },
-                "emailConfiguration": {
-                    "host": "mailpit",
-                    "port": 1025,
-                    "security": "NONE",
-                    "defaultFromEmail": identity::MAIL_FROM,
-                    "defaultFromName": "Macro Local",
-                    "passwordlessEmailTemplateId": template_id,
-                },
+                "emailConfiguration": email_configuration,
                 // Make the passwordless code a 6-digit number (matches the dev
                 // Pulumi tenant config), not FusionAuth's default long token.
                 "externalIdentifierConfiguration": {

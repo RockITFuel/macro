@@ -56,14 +56,14 @@ fn a_public_stack_refuses_fixture_secrets() {
         .collect();
 
     // Local stacks keep their fixtures.
-    assert!(ensure_no_fixture_secrets(&fixtures, &fixtures).is_ok());
+    assert!(check(&fixtures, &fixtures).is_ok());
 
     let mut public = fixtures.clone();
     public.insert(PUBLIC_ORIGIN.into(), "https://macro.example.com".into());
+    public.insert(SMTP_HOST.into(), "smtp.example.com".into());
+    public.insert(MAIL_FROM.into(), "noreply@example.com".into());
     public.insert("JWT_SECRET_KEY".into(), "overridden".into());
-    let error = ensure_no_fixture_secrets(&public, &fixtures)
-        .unwrap_err()
-        .to_string();
+    let error = check(&public, &fixtures).unwrap_err().to_string();
     assert!(error.contains(INTERNAL_AUTH_KEY), "{error}");
     assert!(error.contains(FUSIONAUTH_ADMIN_PASSWORD), "{error}");
     assert!(!error.contains("JWT_SECRET_KEY"), "{error}");
@@ -72,5 +72,40 @@ fn a_public_stack_refuses_fixture_secrets() {
         public.insert(key.into(), format!("deployed-{key}"));
     }
     public.insert(FUSIONAUTH_ADMIN_PASSWORD.into(), "admin-secret".into());
-    assert!(ensure_no_fixture_secrets(&public, &fixtures).is_ok());
+    assert!(check(&public, &fixtures).is_ok());
+}
+
+#[test]
+fn a_public_stack_needs_real_mail() {
+    let public = env(&[(PUBLIC_ORIGIN, "https://macro.example.com")]);
+    let error = check(&public, &BTreeMap::new()).unwrap_err().to_string();
+    assert!(error.contains(SMTP_HOST), "{error}");
+}
+
+#[test]
+fn smtp_settings_default_the_port_from_the_security() {
+    assert_eq!(SelfHost::default().smtp().unwrap(), None);
+    let settings = SelfHost::from_env(&env(&[
+        (SMTP_HOST, "smtp.mx.cloudflare.net"),
+        (SMTP_SECURITY, "ssl"),
+        (SMTP_USERNAME, "mailer"),
+        (SMTP_PASSWORD, "secret"),
+    ]));
+    assert_eq!(
+        settings.smtp().unwrap(),
+        Some(Smtp {
+            host: "smtp.mx.cloudflare.net",
+            port: 465,
+            security: "SSL",
+            username: Some("mailer"),
+            password: Some("secret"),
+        })
+    );
+    for broken in [
+        env(&[(SMTP_HOST, "smtp.example.com"), (SMTP_SECURITY, "STARTTLS")]),
+        env(&[(SMTP_HOST, "smtp.example.com"), (SMTP_PORT, "smtps")]),
+        env(&[(SMTP_HOST, "smtp.example.com"), (SMTP_USERNAME, "mailer")]),
+    ] {
+        assert!(SelfHost::from_env(&broken).smtp().is_err(), "{broken:?}");
+    }
 }

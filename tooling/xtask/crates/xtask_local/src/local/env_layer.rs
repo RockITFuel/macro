@@ -167,7 +167,7 @@ pub fn resolve(
         )?;
         let mut fixture_env = fixtures.boot_stub_env();
         fixture_env.extend(fixtures.to_env());
-        self_host::ensure_no_fixture_secrets(&env, &fixture_env)?;
+        self_host::check(&env, &fixture_env)?;
     }
 
     let generated_path = instance.ensure_artifact_dir()?.join("local.generated.env");
