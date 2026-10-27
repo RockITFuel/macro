@@ -786,6 +786,17 @@ impl BootStubEnv {
             "http://localhost:8080/pipedream/mcp/webhook?secret=local".into(),
         );
         env.insert("PIPEDREAM_WEBHOOK_SECRET".into(), "local".into());
+        // The harness's Pipedream Connect client is boot-required; real
+        // connections need a Pipedream project in `--env-file`.
+        env.insert(
+            "PIPEDREAM_CLIENT_ID".into(),
+            "local-pipedream-client".into(),
+        );
+        env.insert(
+            "PIPEDREAM_CLIENT_SECRET".into(),
+            "local-pipedream-secret".into(),
+        );
+        env.insert("PIPEDREAM_PROJECT_ID".into(), "proj_local".into());
         env.insert("OPENSEARCH_USERNAME".into(), "macrouser".into());
         env.insert("OPENSEARCH_PASSWORD".into(), "local".into());
         // Local document URLs use the instance endpoint supplied by InfraEnv;

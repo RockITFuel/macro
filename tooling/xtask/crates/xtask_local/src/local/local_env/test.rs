@@ -81,6 +81,10 @@ fn slack_import_worker_uses_local_resources_and_starts_paused() {
 fn emits_required_keys() {
     let env = local_env();
     for key in [
+        // agent_harness_service refuses to boot without its Pipedream client.
+        "PIPEDREAM_CLIENT_ID",
+        "PIPEDREAM_CLIENT_SECRET",
+        "PIPEDREAM_PROJECT_ID",
         "ENVIRONMENT",
         "PORT",
         "FRONTEND_PORT",
