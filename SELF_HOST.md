@@ -48,12 +48,36 @@ toolchain in `rust-toolchain.toml`.
 ## Configuration
 
 There is no Doppler and no AWS. The local stack's generator (`tooling/xtask`,
-`just run_local --no-doppler --env-file ./local.env`) writes the env file, the
-Caddy proxy, the LocalStack resources and the FusionAuth kickstart; the
-self-hosted deploy reuses that output with the public origin set to
-`https://macro.alphamonitoring.app`. Run with `ENVIRONMENT=local`: production
-mode hardcodes `macro.com` for cookies and redirects and reads secrets from AWS
-Secrets Manager.
+`just stack up --instance selfhost --no-doppler --env-file ./selfhost.env`)
+writes the env file, the Caddy proxy, the LocalStack resources and the
+FusionAuth kickstart. Run with `ENVIRONMENT=local`: production mode hardcodes
+`macro.com` for cookies and redirects and reads secrets from AWS Secrets
+Manager.
+
+These settings, in the env file or the process env, turn the stack into a
+public instance. Unset, it is the localhost development stack.
+
+| Variable | Effect |
+| --- | --- |
+| `MACRO_PUBLIC_ORIGIN` | App origin (`https://macro.alphamonitoring.app`) for `FRONTEND_ORIGIN`, `APP_BASE_URL`, the public file/MCP/storage URLs and the FusionAuth redirects. The auth service is reached at `<origin>/auth`. Also drops the Mailpit route, the proxy's wildcard CORS and the auth service's login-code shortcuts, and refuses to start while a secret below still has its development value. |
+| `MACRO_FUSIONAUTH_PUBLIC_URL` | Browser URL of FusionAuth (`FUSIONAUTH_PUBLIC_URL`), only used by OAuth sign-in and connect flows. |
+| `MACRO_BIND_ADDRESS` | Publish every port on this address only (`127.0.0.1`). Needs `--instance`. |
+| `MACRO_POSTGRES_PASSWORD`, `MACRO_FUSIONAUTH_DB_PASSWORD` | Database passwords. Postgres applies them only to an empty volume. |
+| `MACRO_FUSIONAUTH_ADMIN_PASSWORD` | Password of the FusionAuth admin `admin@macro.com`. |
+
+Secrets go in the same env file and reach the services and the kickstart
+alike: `INTERNAL_AUTH_KEY`, `FUSIONAUTH_API_KEY`, `FUSIONAUTH_CLIENT_SECRET_KEY`,
+`JWT_SECRET_KEY`, `MACRO_API_TOKEN_PRIVATE_SECRET_KEY` and
+`MACRO_API_TOKEN_PUBLIC_KEY` (an RSA pair), `DOCUMENT_PERMISSION_JWT`,
+`INTERNAL_CALL_SECRET`, `URL_SIGNING_HMAC`, `ACCOUNT_LINK_STATE_SECRET` (32+
+bytes) and `MCP_CREDENTIALS_KEY_SECRET_NAME` (base64 of 32 bytes). Avoid `$` in
+values: compose interpolates them. Changing a kickstart secret re-inits
+FusionAuth on the next `stack up`.
+
+Traefik routes the app origin to the instance's proxy port (`--port-base` + 9,
+HTTPS with the development CA, so skip verification) and the auth host, when
+used, to FusionAuth (`--port-base` + 5); see `Port` in
+`tooling/xtask/crates/xtask_local/src/local/instance.rs`.
 
 ## Outlook
 
