@@ -345,6 +345,31 @@ Replace sharing grants.
 
 ***
 
+### wait()
+
+> **wait**(`options?`): `Promise`\<[`SessionWait`](../../../../../generated/agent-harness/types.gen/type-aliases/SessionWait.md)\>
+
+Wait until this session's current turn finishes, needs an answer or
+approval, or fails, then return its status and latest messages. Returns
+at once when the session is not running.
+
+`status` is `running`, `idle`, `waiting`, `failed` or `disconnected`.
+`timedOut` is true when `timeoutMs` passed with the turn still running;
+call again to keep waiting. When `status` is `waiting`, `pendingRequests`
+holds the agent's question or approval request with its options.
+
+#### Parameters
+
+| Parameter | Type |
+| ------ | ------ |
+| `options?` | [`WaitOptions`](../type-aliases/WaitOptions.md) |
+
+#### Returns
+
+`Promise`\<[`SessionWait`](../../../../../generated/agent-harness/types.gen/type-aliases/SessionWait.md)\>
+
+***
+
 ### byId()
 
 > `static` **byId**(`client`, `id`): `AgentSession`

@@ -616,6 +616,12 @@ Re-exports [UserApiKey](../entities/api-keys/api-key/classes/UserApiKey.md)
 
 ***
 
+### WaitOptions
+
+Re-exports [WaitOptions](../entities/agent-sessions/agent-session/type-aliases/WaitOptions.md)
+
+***
+
 ### WorkspaceFilters
 
 Re-exports [WorkspaceFilters](../entities/workspace/types/type-aliases/WorkspaceFilters.md)

@@ -2681,6 +2681,79 @@
           }
         }
       }
+    },
+    "/agent-sessions/{session_id}/wait": {
+      "get": {
+        "tags": ["agent-sessions"],
+        "summary": "Wait until the session's current turn finishes, needs an answer or\napproval, or fails; returns at once when it is not running.",
+        "description": "Returns the turn's status, any pending question or approval, and the\nlatest messages. `timedOut` is true when the wait ended with the turn\nstill running.",
+        "operationId": "wait_agent_session",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "ID of the agent session",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "timeoutMs",
+            "in": "query",
+            "description": "Milliseconds to wait before returning with `timedOut`; default\n120000, at most 600000.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionWait"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4481,6 +4554,39 @@
         "description": "Harness names accepted by the model discovery endpoint.",
         "enum": ["in-memory", "cursor", "macrod"]
       },
+      "PendingRequest": {
+        "type": "object",
+        "description": "One request the turn is blocked on.",
+        "required": ["kind", "turn", "message", "options"],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/PendingRequestKind",
+            "description": "What kind of answer it needs."
+          },
+          "message": {
+            "type": "string",
+            "description": "The question, or what needs approval, in prose."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The choices offered, when the request offers fixed ones."
+          },
+          "turn": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The turn that asked.",
+            "minimum": 0
+          }
+        }
+      },
+      "PendingRequestKind": {
+        "type": "string",
+        "description": "What a request blocking the turn asks for.",
+        "enum": ["question", "permission", "tool_approval"]
+      },
       "PermissionAnswer": {
         "oneOf": [
           {
@@ -5043,6 +5149,109 @@
           }
         }
       },
+      "SessionConversation": {
+        "type": "object",
+        "description": "A readable session conversation, including tool activity and failures.",
+        "required": [
+          "sessionId",
+          "name",
+          "ownerId",
+          "botId",
+          "isArchived",
+          "harness",
+          "model",
+          "status",
+          "messages",
+          "totalMessages",
+          "truncated"
+        ],
+        "properties": {
+          "botId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Agent persona id."
+          },
+          "harness": {
+            "type": "string",
+            "description": "Configured runtime."
+          },
+          "isArchived": {
+            "type": "boolean",
+            "description": "Whether the session is archived and read-only."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionConversationMessage"
+            },
+            "description": "Messages in the requested turn, or the latest messages, oldest first."
+          },
+          "model": {
+            "type": "string",
+            "description": "Selected model."
+          },
+          "name": {
+            "type": "string",
+            "description": "User-facing session name."
+          },
+          "ownerId": {
+            "type": "string",
+            "description": "Owner's principal id."
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Session identity."
+          },
+          "status": {
+            "type": "string",
+            "description": "Last runtime status."
+          },
+          "totalMessages": {
+            "type": "integer",
+            "description": "Number of messages matching the requested turn before bounding.",
+            "minimum": 0
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Whether older messages or text were omitted."
+          }
+        }
+      },
+      "SessionConversationMessage": {
+        "type": "object",
+        "description": "One folded prompt or reply.",
+        "required": ["turn", "role", "content", "truncated"],
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Readable prose, tool activity, outputs, and errors."
+          },
+          "failure": {
+            "type": ["string", "null"],
+            "description": "Terminal runtime error, retained separately even when earlier text is truncated."
+          },
+          "role": {
+            "$ref": "#/components/schemas/SessionMessageRole",
+            "description": "Whether this message came from the user or agent."
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "Whether this message's text exceeded the character budget."
+          },
+          "turn": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Turn number; pass it back to read that turn specifically.",
+            "minimum": 0
+          }
+        }
+      },
+      "SessionMessageRole": {
+        "type": "string",
+        "description": "The two sides of a session conversation.",
+        "enum": ["user", "agent"]
+      },
       "SessionPullRequestLink": {
         "type": "object",
         "description": "A pull request associated with a session.",
@@ -5126,6 +5335,41 @@
           }
         ],
         "description": "Transport representation of a session's status, mirroring\n[`SessionStatus`]."
+      },
+      "SessionWait": {
+        "type": "object",
+        "description": "A session's state when a wait ended, with its latest messages.",
+        "required": ["status", "timedOut", "pendingRequests", "conversation"],
+        "properties": {
+          "conversation": {
+            "$ref": "#/components/schemas/SessionConversation",
+            "description": "The latest messages, bounded as `ReadAgentSession` bounds them."
+          },
+          "failure": {
+            "type": ["string", "null"],
+            "description": "The runtime error that ended the last turn, when `status` is `failed`."
+          },
+          "pendingRequests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingRequest"
+            },
+            "description": "Requests the turn is blocked on; empty unless `status` is `waiting`."
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionWaitStatus",
+            "description": "Where the current turn stands."
+          },
+          "timedOut": {
+            "type": "boolean",
+            "description": "Whether the wait ended at its deadline with the turn still running."
+          }
+        }
+      },
+      "SessionWaitStatus": {
+        "type": "string",
+        "description": "Where a session's current turn stands for someone waiting on it.",
+        "enum": ["running", "idle", "waiting", "failed", "disconnected"]
       },
       "SetAgentSessionArchivedRequest": {
         "type": "object",

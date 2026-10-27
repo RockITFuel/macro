@@ -43,11 +43,13 @@ import type {
   ReviewRecord,
   SandboxSizeBody,
   SessionPullRequestsResponse,
+  SessionWait,
   SetAgentSessionArchivedRequest,
   SharePermissionV2,
   StartFreshAgentConversationRequest,
   UnlinkAgentSessionPullRequestParams,
   UpdateSharePermissionRequestV2,
+  WaitAgentSessionParams,
   WarmAgentSessionRequest,
   WarmAgentSessionResponse,
 } from './schemas';
@@ -3040,4 +3042,85 @@ export const answerAgentSessionToolApproval = async (
     status: res.status,
     headers: res.headers,
   } as answerAgentSessionToolApprovalResponse;
+};
+
+/**
+ * Returns the turn's status, any pending question or approval, and the
+latest messages. `timedOut` is true when the wait ended with the turn
+still running.
+ * @summary Wait until the session's current turn finishes, needs an answer or
+approval, or fails; returns at once when it is not running.
+ */
+export type waitAgentSessionResponse200 = {
+  data: SessionWait;
+  status: 200;
+};
+
+export type waitAgentSessionResponse401 = {
+  data: string;
+  status: 401;
+};
+
+export type waitAgentSessionResponse403 = {
+  data: string;
+  status: 403;
+};
+
+export type waitAgentSessionResponse500 = {
+  data: string;
+  status: 500;
+};
+
+export type waitAgentSessionResponseSuccess = waitAgentSessionResponse200 & {
+  headers: Headers;
+};
+export type waitAgentSessionResponseError = (
+  | waitAgentSessionResponse401
+  | waitAgentSessionResponse403
+  | waitAgentSessionResponse500
+) & {
+  headers: Headers;
+};
+
+export type waitAgentSessionResponse =
+  | waitAgentSessionResponseSuccess
+  | waitAgentSessionResponseError;
+
+export const getWaitAgentSessionUrl = (
+  sessionId: string,
+  params?: WaitAgentSessionParams
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/agent-sessions/${sessionId}/wait?${stringifiedParams}`
+    : `/agent-sessions/${sessionId}/wait`;
+};
+
+export const waitAgentSession = async (
+  sessionId: string,
+  params?: WaitAgentSessionParams,
+  options?: RequestInit
+): Promise<waitAgentSessionResponse> => {
+  const res = await fetch(getWaitAgentSessionUrl(sessionId, params), {
+    ...options,
+    method: 'GET',
+  });
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: waitAgentSessionResponse['data'] = body ? JSON.parse(body) : {};
+  return {
+    data,
+    status: res.status,
+    headers: res.headers,
+  } as waitAgentSessionResponse;
 };

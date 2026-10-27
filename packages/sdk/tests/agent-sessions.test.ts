@@ -4,6 +4,7 @@ import type {
   AgentSessionChangesResponse,
   AgentSessionResponse,
   ExecutionRecord,
+  SessionWait,
 } from '../generated/agent-harness/types.gen';
 import { Macro } from '../src/macro';
 
@@ -447,6 +448,53 @@ describe('AgentSession', () => {
     expect(request?.method).toBe('GET');
     expect(request?.url).toBe(
       `https://agent.example.test/agent-sessions/${sessionId}/log/folded`,
+    );
+  });
+
+  test('waits on the current turn with the requested timeout', async () => {
+    const waited: SessionWait = {
+      status: 'waiting',
+      timedOut: false,
+      pendingRequests: [
+        {
+          kind: 'question',
+          turn: 2,
+          message: 'Which branch should I deploy?',
+          options: ['main', 'self-host'],
+        },
+      ],
+      failure: null,
+      conversation: {
+        sessionId,
+        name: 'Agent Session',
+        ownerId: 'macro|owner@example.com',
+        botId: session.botId,
+        isArchived: false,
+        harness: 'claude-code',
+        model: 'claude-sonnet',
+        status: 'acp_ready',
+        messages: [],
+        totalMessages: 0,
+        truncated: false,
+      },
+    };
+    let request: Request | undefined;
+    globalThis.fetch = (async (input) => {
+      request = input instanceof Request ? input : new Request(input);
+      return Response.json(waited);
+    }) as typeof fetch;
+    const macro = new Macro({
+      token: 'user-token',
+      hosts: { 'agent-harness': 'https://agent.example.test' },
+    });
+
+    await expect(
+      macro.agentSessions.byId(sessionId).wait({ timeoutMs: 30000 }),
+    ).resolves.toEqual(waited);
+
+    expect(request?.method).toBe('GET');
+    expect(request?.url).toBe(
+      `https://agent.example.test/agent-sessions/${sessionId}/wait?timeoutMs=30000`,
     );
   });
 
