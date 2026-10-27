@@ -138,20 +138,13 @@ async fn override_base_uses_its_own_token() {
     assert_eq!(transcript.duration_seconds, 1.5);
 }
 
-#[tokio::test]
-async fn override_base_without_token_falls_back_to_the_openai_key() {
-    let server = MockServer::start().await;
-    mount_transcription(&server, "Bearer test-server-key").await;
+#[test]
+fn override_base_without_token_never_uses_the_openai_key() {
     let api_key = OpenaiApiKey::new_testing("test-server-key");
-    let base = format!("{}/v1", server.uri());
-
-    let transcript = WhisperTranscriber::with_override(&api_key, Some(&base), None)
-        .unwrap()
-        .transcribe(recording())
-        .await
-        .unwrap();
-
-    assert_eq!(transcript.text, "Goedemorgen.");
+    assert!(matches!(
+        WhisperTranscriber::with_override(&api_key, Some("http://stt/v1"), None),
+        Err(WhisperConfigError::MissingSttApiKey)
+    ));
 }
 
 #[test]

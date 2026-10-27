@@ -28,7 +28,7 @@ macro_env_var::maybe_env_vars! {
     /// OpenAI, e.g. the self-hosted local speech-to-text gateway
     /// (`http://macro-stt-hub:8790/v1`). Unset: OpenAI.
     pub struct DictationSttApiBase;
-    /// Bearer token for `DICTATION_STT_API_BASE`. Unset: `OPENAI_API_KEY`.
+    /// Bearer token for `DICTATION_STT_API_BASE`, required with it.
     pub struct DictationSttApiKey;
 }
 
@@ -66,21 +66,20 @@ impl WhisperTranscriber {
         )
     }
 
-    /// Use `api_base` (with `override_key`, else the OpenAI key) when given.
+    /// Use `api_base` with `override_key` when given, else OpenAI.
     pub fn with_override(
         api_key: &OpenaiApiKey,
         api_base: Option<&str>,
         override_key: Option<&str>,
     ) -> Result<Self, WhisperConfigError> {
         let base = api_base.map(str::trim).filter(|base| !base.is_empty());
-        let key = match (base, override_key) {
-            (Some(_), Some(key)) => key,
-            _ => api_key.as_ref(),
+        let Some(base) = base else {
+            return Self::build(api_key.as_ref(), None);
         };
-        if base.is_some() {
-            tracing::info!("dictation uses the OpenAI-compatible API at DICTATION_STT_API_BASE");
-        }
-        Self::build(key, base)
+        // Never send the OpenAI key to another API.
+        let key = override_key.ok_or(WhisperConfigError::MissingSttApiKey)?;
+        tracing::info!("dictation uses the OpenAI-compatible API at DICTATION_STT_API_BASE");
+        Self::build(key, Some(base))
     }
 
     /// Construct against a custom API base, e.g. a test server.
@@ -116,6 +115,9 @@ pub enum WhisperConfigError {
     /// The required credential contains no usable key.
     #[error("OPENAI_API_KEY must not be empty")]
     EmptyApiKey,
+    /// `DICTATION_STT_API_BASE` is set without `DICTATION_STT_API_KEY`.
+    #[error("DICTATION_STT_API_KEY is required with DICTATION_STT_API_BASE")]
+    MissingSttApiKey,
     /// The HTTP client could not be constructed.
     #[error(transparent)]
     HttpClient(#[from] reqwest::Error),
