@@ -75,6 +75,7 @@ const STANDALONE_TOOLS: ReadonlySet<string> = new Set([
   'DisplayResults',
   'GenerateImage',
   'ReadActivity',
+  'RenderHtml',
   'QueryDatabase',
   'SaveDatabaseView',
   'SendEmail',

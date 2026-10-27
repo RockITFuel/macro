@@ -166,6 +166,7 @@ import { readProjectHandler } from './ReadProject';
 import { readSkillHandler } from './ReadSkill';
 import { readThreadHandler } from './ReadThread';
 import { renameDocumentHandler } from './RenameDocument';
+import { renderHtmlHandler } from './RenderHtml';
 import {
   createRoutineHandler,
   deleteRoutineHandler,
@@ -296,6 +297,7 @@ const toolHandlers: ToolHandlerMap<RenderContext> = {
   UpdateSharing: updateSharingHandler,
   BashCodeExecution: bashCodeExecutionHandler,
   DisplayResults: displayResultsHandler,
+  RenderHtml: renderHtmlHandler,
   DiscoverConnectors: discoverConnectorsHandler,
   ContentSearch: contentSearchHandler,
   CreateDocument: createDocumentHandler,

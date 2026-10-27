@@ -15049,6 +15049,18 @@ export const CanvasRender = z.object({
   ),
 });
 
+export const RenderHtml = z.object({
+  title: z.string(),
+  html: z.string(),
+  height: z.number().int().gte(0),
+});
+
+export const RenderHtmlResponse = z.object({
+  documentId: z.string().uuid(),
+  height: z.number().int().gte(0),
+  warnings: z.array(z.string()).optional(),
+});
+
 export const ResolveComment = z.object({
   threadId: z.string().uuid(),
   resolved: z.boolean().optional(),

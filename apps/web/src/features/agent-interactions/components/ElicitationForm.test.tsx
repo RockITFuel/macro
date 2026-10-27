@@ -27,8 +27,13 @@ function question(customField: string | null): ElicitationSchema {
           format: null,
           default: 'red',
           options: [
-            { value: 'red', title: 'Red', description: null },
-            { value: '__custom', title: 'A literal option', description: null },
+            { value: 'red', title: 'Red', description: null, preview: null },
+            {
+              value: '__custom',
+              title: 'A literal option',
+              description: null,
+              preview: null,
+            },
           ],
           customField,
         },
@@ -53,8 +58,8 @@ function regions(customField: string | null): ElicitationSchema {
           maxItems: null,
           default: ['us'],
           options: [
-            { value: 'us', title: 'US', description: null },
-            { value: 'eu', title: 'EU', description: null },
+            { value: 'us', title: 'US', description: null, preview: null },
+            { value: 'eu', title: 'EU', description: null, preview: null },
           ],
           customField,
         },
@@ -200,5 +205,86 @@ describe('multi-choice elicitation', () => {
   it('has no Other row when the schema allows none', () => {
     const view = form(regions(null));
     expect(view.queryByRole('checkbox', { name: 'Other' })).toBeNull();
+  });
+});
+
+describe('option previews', () => {
+  function layouts(multiple: boolean): ElicitationSchema {
+    const options = [
+      {
+        value: 'Sidebar',
+        title: 'Sidebar',
+        description: 'Navigation on the left',
+        preview: '+----+--------+\n| nav| page   |\n+----+--------+',
+      },
+      {
+        value: 'Tabs',
+        title: 'Tabs',
+        description: null,
+        preview: '[ one ][ two ]\n+-------------+',
+      },
+      { value: 'Plain', title: 'Plain', description: null, preview: null },
+    ];
+    return {
+      title: 'Layout',
+      description: null,
+      required: [],
+      properties: [
+        {
+          name: 'answer',
+          title: 'Layout',
+          description: null,
+          schema: multiple
+            ? {
+                type: 'multi_select',
+                minItems: null,
+                maxItems: null,
+                default: [],
+                options,
+                customField: 'answer_custom',
+              }
+            : {
+                type: 'string',
+                minLength: null,
+                maxLength: null,
+                pattern: null,
+                format: null,
+                default: null,
+                options,
+                customField: 'answer_custom',
+              },
+        },
+      ],
+    };
+  }
+  const preview = () =>
+    document.querySelector('[data-option-preview]')?.textContent ?? null;
+
+  it('shows the chosen option sketch, and the hovered one while looking', () => {
+    const view = form(layouts(false));
+    expect(preview()).toBeNull();
+
+    fireEvent.click(view.getByRole('radio', { name: /Sidebar/ }));
+    expect(preview()).toContain('| nav| page   |');
+
+    fireEvent.pointerEnter(view.getByRole('radio', { name: /Tabs/ }));
+    expect(preview()).toContain('[ one ][ two ]');
+
+    fireEvent.pointerLeave(view.getByRole('radiogroup'));
+    expect(preview()).toContain('| nav| page   |');
+
+    // An option without a sketch shows none.
+    fireEvent.click(view.getByRole('radio', { name: /Plain/ }));
+    expect(preview()).toBeNull();
+    expect(view.answer()).toEqual({ answer: 'Plain' });
+  });
+
+  it('follows the last toggled option in a multi-select', () => {
+    const view = form(layouts(true));
+    fireEvent.click(view.getByRole('checkbox', { name: /Tabs/ }));
+    expect(preview()).toContain('[ one ][ two ]');
+    fireEvent.focus(view.getByRole('checkbox', { name: /Sidebar/ }));
+    expect(preview()).toContain('| nav| page   |');
+    expect(view.answer()).toEqual({ answer: ['Tabs'] });
   });
 });

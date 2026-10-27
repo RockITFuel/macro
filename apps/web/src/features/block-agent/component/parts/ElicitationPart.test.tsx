@@ -170,8 +170,8 @@ const colourForm: Elicitation['request'] = {
           format: null,
           default: null,
           options: [
-            { value: 'Red', title: 'Red', description: null },
-            { value: 'Blue', title: 'Blue', description: null },
+            { value: 'Red', title: 'Red', description: null, preview: null },
+            { value: 'Blue', title: 'Blue', description: null, preview: null },
           ],
           customField: 'question_0_custom',
         },

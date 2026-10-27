@@ -220,6 +220,11 @@ export type ElicitationOption = {
 	title: string | null,
 	/**  Help text, when the agent gave one. */
 	description: string | null,
+	/**
+	 *  A plain-text sketch to show in a monospace box while the option is
+	 *  chosen, from the option's `_meta.macro.preview` (Macro's `AskUser`).
+	 */
+	preview: string | null,
 };
 
 /**

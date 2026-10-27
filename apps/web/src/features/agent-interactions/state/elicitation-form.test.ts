@@ -20,8 +20,8 @@ const colour: ElicitationSchema = {
         format: null,
         default: null,
         options: [
-          { value: 'Red', title: 'Red', description: 'Red' },
-          { value: 'Blue', title: 'Blue', description: 'Blue' },
+          { value: 'Red', title: 'Red', description: 'Red', preview: null },
+          { value: 'Blue', title: 'Blue', description: 'Blue', preview: null },
         ],
         customField: 'question_0_custom',
       },
@@ -76,9 +76,9 @@ const config: ElicitationSchema = {
         minItems: 1,
         maxItems: 2,
         options: [
-          { value: 'r', title: 'Red', description: null },
-          { value: 'g', title: 'Green', description: null },
-          { value: 'b', title: null, description: null },
+          { value: 'r', title: 'Red', description: null, preview: null },
+          { value: 'g', title: 'Green', description: null, preview: null },
+          { value: 'b', title: null, description: null, preview: null },
         ],
         default: ['r'],
         customField: null,
