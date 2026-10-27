@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::os::unix::process::CommandExt;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -53,74 +54,132 @@ pub fn static_dir(instance: &Instance) -> std::path::PathBuf {
     instance.artifact_dir().join("frontend")
 }
 
-/// Build the app bundle for headless serving and stage it into the instance
-/// dir. The build mirrors `just build-dev`
-/// (dev-mode bundle, production optimizations), except the backend origin is
-/// the `same-origin` sentinel — resolved from `location.origin` at runtime — so
-/// the one bundle works on localhost and through any tunneled hostname.
-///
-/// Setting `VITE_LOCAL_BACKEND_ORIGIN` also keeps `import.meta.env.DEV` true
-/// in the static bundle (see `keepImportMetaDev` in apps/web/scripts). `vite build`
-/// otherwise compiles DEV from `NODE_ENV=production`, which drops local-only
-/// paths such as passwordless auto-login (`just run_local` uses `vite serve`,
-/// where DEV is already true). Headless `stack up` sets the same origin env.
-///
-/// `github_login` adds "Continue with GitHub" to the sign-in page; see
-/// [`github_login`].
+/// How the static bundle is obtained for a run, from its resolved env.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrontendBuild {
+    /// Add "Continue with GitHub" to the sign-in page: the env configures a
+    /// real GitHub client, which is when the kickstart creates the `github`
+    /// identity provider sign-in goes through.
+    pub github_login: bool,
+    /// A bundle built elsewhere (`stack build-frontend`) to stage instead of
+    /// running bun, from `MACRO_FRONTEND_BUNDLE`.
+    pub prebuilt: Option<PathBuf>,
+}
+
+impl FrontendBuild {
+    pub fn from_env(env: &BTreeMap<String, String>) -> Self {
+        FrontendBuild {
+            github_login: super::kickstart::GithubIdp::from_env(env).is_some(),
+            prebuilt: super::self_host::SelfHost::from_env(env)
+                .frontend_bundle
+                .map(PathBuf::from),
+        }
+    }
+}
+
+/// Build the app bundle for headless serving (or take the prebuilt one) and
+/// stage it into the instance dir.
 pub fn build_static(
     stage: &Stage,
     instance: &Instance,
     mode: Mode,
-    github_login: bool,
+    build: &FrontendBuild,
 ) -> Result<()> {
-    let dist = {
-        let mut cmd = Command::new("bun");
-        cmd.current_dir(app_dir())
-            .args(["run", "--bun", "build"])
-            .env("MODE", "development")
-            .env("NODE_ENV", "production")
-            .env("VITE_LOCAL_SERVERS", "ALL")
-            .env("VITE_LOCAL_BACKEND_ORIGIN", "same-origin");
-        if mode.spec().runs_local_infra {
-            cmd.env("VITE_AI_EDITING_WORKER_URL", "/ai-editing");
-        }
-        if github_login {
-            cmd.env("VITE_ENABLE_GITHUB_LOGIN", "true");
-        }
-        stage.run("Building frontend bundle", &mut cmd)?;
-        app_dir().join("dist")
+    let dist = match &build.prebuilt {
+        Some(dir) => dir.clone(),
+        None => build_bundle(stage, mode, build.github_login)?,
     };
     if stage.is_dry_run() {
         return Ok(());
     }
     if !dist.join("index.html").exists() {
         anyhow::bail!(
-            "no index.html in {} — frontend build did not produce a bundle",
+            "no index.html in {} — not a frontend bundle",
             dist.display()
         );
     }
     stage.run_step("Staging frontend bundle", || {
         let staged = static_dir(instance);
-        if staged.exists() {
-            std::fs::remove_dir_all(&staged)
-                .with_context(|| format!("clearing {}", staged.display()))?;
-        }
         instance.ensure_artifact_dir()?;
-        let status = Command::new("cp")
-            .arg("-a")
-            .arg(&dist)
-            .arg(&staged)
-            .status()
-            .context("running cp -a")?;
-        anyhow::ensure!(status.success(), "cp -a exited with {status}");
-        Ok(())
+        copy_bundle(&dist, &staged)
     })
 }
 
-/// Whether the resolved env configures a real GitHub client, which is when
-/// the kickstart creates the `github` identity provider sign-in goes through.
-pub fn github_login(env: &BTreeMap<String, String>) -> bool {
-    super::kickstart::GithubIdp::from_env(env).is_some()
+/// Build the app bundle into `apps/web/dist` and return that directory. The
+/// build mirrors `just build-dev` (dev-mode bundle, production optimizations),
+/// except the backend origin is the `same-origin` sentinel — resolved from
+/// `location.origin` at runtime — so the one bundle works on localhost, a
+/// public origin and any tunneled hostname. Only `github_login` and `mode`
+/// change its contents.
+///
+/// Setting `VITE_LOCAL_BACKEND_ORIGIN` also keeps `import.meta.env.DEV` true
+/// in the static bundle (see `keepImportMetaDev` in apps/web/scripts). `vite build`
+/// otherwise compiles DEV from `NODE_ENV=production`, which drops local-only
+/// paths such as passwordless auto-login (`just run_local` uses `vite serve`,
+/// where DEV is already true). Headless `stack up` sets the same origin env.
+fn build_bundle(stage: &Stage, mode: Mode, github_login: bool) -> Result<PathBuf> {
+    let mut cmd = Command::new("bun");
+    cmd.current_dir(app_dir())
+        .args(["run", "--bun", "build"])
+        .env("MODE", "development")
+        .env("NODE_ENV", "production")
+        .env("VITE_LOCAL_SERVERS", "ALL")
+        .env("VITE_LOCAL_BACKEND_ORIGIN", "same-origin");
+    for (key, value) in bundle_env(mode, github_login) {
+        cmd.env(key, value);
+    }
+    stage.run("Building frontend bundle", &mut cmd)?;
+    Ok(app_dir().join("dist"))
+}
+
+/// The build env that differs between stacks; everything else in a bundle
+/// is the same for every stack built from one checkout.
+fn bundle_env(mode: Mode, github_login: bool) -> Vec<(&'static str, &'static str)> {
+    let mut env = Vec::new();
+    if mode.spec().runs_local_infra {
+        env.push(("VITE_AI_EDITING_WORKER_URL", "/ai-editing"));
+    }
+    if github_login {
+        env.push(("VITE_ENABLE_GITHUB_LOGIN", "true"));
+    }
+    env
+}
+
+/// `cargo x stack build-frontend`: build the bundle `stack up` would build for
+/// this env, with the wasm modules it imports, and copy it to `out` for a
+/// machine without bun to stage through `MACRO_FRONTEND_BUNDLE`.
+pub fn build_frontend_to(
+    stage: &Stage,
+    mode: Mode,
+    env: &BTreeMap<String, String>,
+    out: &std::path::Path,
+) -> Result<()> {
+    // `vite build` imports the generated wasm packages (cache, agent fold,
+    // the document engines), which are gitignored; build any that are missing
+    // or stale, as `just build-dev` does.
+    let mut prepare = Command::new("bun");
+    prepare.current_dir(app_dir()).args(["run", "dev:prepare"]);
+    stage.run("Building frontend wasm modules", &mut prepare)?;
+    let dist = build_bundle(stage, mode, FrontendBuild::from_env(env).github_login)?;
+    if stage.is_dry_run() {
+        return Ok(());
+    }
+    stage.run_step("Copying frontend bundle", || copy_bundle(&dist, out))
+}
+
+/// Replace `to` with a copy of the bundle in `from`.
+fn copy_bundle(from: &std::path::Path, to: &std::path::Path) -> Result<()> {
+    if to.exists() {
+        std::fs::remove_dir_all(to).with_context(|| format!("clearing {}", to.display()))?;
+    }
+    let status = Command::new("cp")
+        .arg("-a")
+        .arg(from)
+        .arg(to)
+        .status()
+        .context("running cp -a")?;
+    anyhow::ensure!(status.success(), "cp -a exited with {status}");
+    Ok(())
 }
 
 /// The env the dev server runs with. Both local and dev point the whole app at

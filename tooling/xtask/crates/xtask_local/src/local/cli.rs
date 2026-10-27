@@ -71,6 +71,9 @@ pub enum StackCmd {
     Status(super::stack::StatusArgs),
     /// Tear the instance down: containers, volumes, and state.
     Down(super::stack::DownArgs),
+    /// Build the static frontend bundle `up` would serve for this env into
+    /// `--out`, for a host without bun (`MACRO_FRONTEND_BUNDLE`).
+    BuildFrontend(super::stack::BuildFrontendArgs),
 }
 
 #[derive(Args, Clone, Default)]
@@ -299,6 +302,7 @@ fn run(cli: Cli) -> Result<()> {
             StackCmd::Update(a) => super::stack::update(&a),
             StackCmd::Status(a) => super::stack::status(&a),
             StackCmd::Down(a) => super::stack::down(&a),
+            StackCmd::BuildFrontend(a) => super::stack::build_frontend(&a),
         },
     }
 }

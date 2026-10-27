@@ -128,17 +128,55 @@ fn failed_restart_reports_output_and_releases_the_port() {
 }
 
 #[test]
-fn github_login_follows_a_real_github_client() {
-    let env = |id: &str, secret: &str| {
-        BTreeMap::from([
-            ("GITHUB_CLIENT_ID".to_string(), id.to_string()),
-            ("GITHUB_CLIENT_SECRET".to_string(), secret.to_string()),
-        ])
+fn the_frontend_build_follows_github_and_a_prebuilt_bundle() {
+    let env = |pairs: &[(&str, &str)]| {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect::<BTreeMap<_, _>>()
     };
-    assert!(!github_login(&BTreeMap::new()));
-    assert!(!github_login(&env(
-        "local-github-client",
-        "local-github-client-secret"
-    )));
-    assert!(github_login(&env("Iv1.realclient", "real-secret")));
+    assert_eq!(
+        FrontendBuild::from_env(&env(&[])),
+        FrontendBuild {
+            github_login: false,
+            prebuilt: None
+        }
+    );
+    assert!(
+        !FrontendBuild::from_env(&env(&[
+            ("GITHUB_CLIENT_ID", "local-github-client"),
+            ("GITHUB_CLIENT_SECRET", "local-github-client-secret"),
+        ]))
+        .github_login
+    );
+    let build = FrontendBuild::from_env(&env(&[
+        ("GITHUB_CLIENT_ID", "Iv1.realclient"),
+        ("GITHUB_CLIENT_SECRET", "real-secret"),
+        ("MACRO_FRONTEND_BUNDLE", "/srv/macro/frontend"),
+    ]));
+    assert!(build.github_login);
+    assert_eq!(build.prebuilt, Some(PathBuf::from("/srv/macro/frontend")));
+    assert!(bundle_env(Mode::Local, true).contains(&("VITE_ENABLE_GITHUB_LOGIN", "true")));
+    assert!(
+        bundle_env(Mode::Local, false)
+            .iter()
+            .all(|(k, _)| *k != "VITE_ENABLE_GITHUB_LOGIN")
+    );
+}
+
+#[test]
+fn a_prebuilt_bundle_without_index_html_is_refused() {
+    let instance = Instance::derive(Some("prebuilt-bundle-test"), None).unwrap();
+    let empty = std::env::temp_dir().join("macro-prebuilt-bundle-test");
+    std::fs::create_dir_all(&empty).unwrap();
+    let build = FrontendBuild {
+        github_login: false,
+        prebuilt: Some(empty.clone()),
+    };
+    let error = build_static(&Stage::from_env(), &instance, Mode::Local, &build)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("index.html"), "{error}");
+    let _ = std::fs::remove_dir_all(&empty);
+    let _ = std::fs::remove_dir_all(instance.artifact_dir());
 }

@@ -341,13 +341,18 @@ pub fn run_stack(mode: Mode, args: &cli::RunArgs) -> Result<()> {
     // `r` hotkey reloads service binaries, not this bundle — live frontend
     // edits show on the dev server, not on the shared URL.
     if share_app && stage.is_dry_run() {
-        frontend::build_static(&stage, &instance, mode, frontend::github_login(&env.merged))?;
+        frontend::build_static(
+            &stage,
+            &instance,
+            mode,
+            &frontend::FrontendBuild::from_env(&env.merged),
+        )?;
     }
     let fe_build = (share_app && !stage.is_dry_run()).then(|| {
         let instance = instance.clone();
         let stage = stage.background();
-        let github_login = frontend::github_login(&env.merged);
-        std::thread::spawn(move || frontend::build_static(&stage, &instance, mode, github_login))
+        let build = frontend::FrontendBuild::from_env(&env.merged);
+        std::thread::spawn(move || frontend::build_static(&stage, &instance, mode, &build))
     });
 
     // The init snapshot decision, exactly as `stack up` makes it (see

@@ -183,13 +183,18 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
     // joined just before `bring_up_app` creates that container. (Dry run:
     // synchronously, so the command preview prints in order.)
     if static_frontend && stage.is_dry_run() {
-        frontend::build_static(&stage, &instance, mode, frontend::github_login(&env.merged))?;
+        frontend::build_static(
+            &stage,
+            &instance,
+            mode,
+            &frontend::FrontendBuild::from_env(&env.merged),
+        )?;
     }
     let fe_build = (static_frontend && !stage.is_dry_run()).then(|| {
         let instance = instance.clone();
         let stage = stage.background();
-        let github_login = frontend::github_login(&env.merged);
-        std::thread::spawn(move || frontend::build_static(&stage, &instance, mode, github_login))
+        let build = frontend::FrontendBuild::from_env(&env.merged);
+        std::thread::spawn(move || frontend::build_static(&stage, &instance, mode, &build))
     });
 
     // The init snapshot decision: hash the init-defining inputs (possible only
@@ -462,7 +467,12 @@ fn reload_static_frontend(
              re-run `just stack up` to serve one"
         );
     }
-    frontend::build_static(stage, instance, mode, frontend::github_login(&env.merged))?;
+    frontend::build_static(
+        stage,
+        instance,
+        mode,
+        &frontend::FrontendBuild::from_env(&env.merged),
+    )?;
     // build_static replaces the staged directory, so the container must be
     // recreated to establish a bind mount to the new inode.
     let mut up = super::compose_cmd(instance, env);
@@ -539,6 +549,41 @@ pub fn down(args: &DownArgs) -> Result<()> {
     }
     super::destroy(&args.instance)?;
     clear_state(&instance)?;
+    Ok(())
+}
+
+#[derive(Args, Clone)]
+pub struct BuildFrontendArgs {
+    #[command(flatten)]
+    pub instance: InstanceArgs,
+    #[command(flatten)]
+    pub env: EnvArgs,
+    /// Write the bundle here, replacing what is there.
+    #[arg(long)]
+    pub out: PathBuf,
+    /// Stream subprocess output and show per-step timings.
+    #[arg(long, short)]
+    pub verbose: bool,
+}
+
+/// `cargo x stack build-frontend`: build the static bundle `stack up` would
+/// serve for this env into `--out`, for a host without bun to serve through
+/// `MACRO_FRONTEND_BUNDLE`. Resolves the env the same way (so a public env
+/// file must be complete) but starts nothing.
+pub fn build_frontend(args: &BuildFrontendArgs) -> Result<()> {
+    let stage = Stage::from_env_cli(args.verbose);
+    let instance = Instance::derive(args.instance.instance.as_deref(), args.instance.port_base)?;
+    let env = env_layer::resolve(
+        Mode::Local,
+        &instance,
+        args.env.no_doppler,
+        args.env.env_file.as_deref(),
+        true,
+        Tunnels::default(),
+        false,
+    )?;
+    frontend::build_frontend_to(&stage, Mode::Local, &env.merged, &args.out)?;
+    stage.note(&format!("frontend bundle at {}", args.out.display()));
     Ok(())
 }
 

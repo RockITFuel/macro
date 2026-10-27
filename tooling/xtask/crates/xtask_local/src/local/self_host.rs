@@ -44,6 +44,9 @@ pub const MAIL_FROM: &str = "MACRO_MAIL_FROM";
 pub const MAIL_FROM_NAME: &str = "MACRO_MAIL_FROM_NAME";
 /// Comma-separated email domains allowed to create an account.
 pub const SIGNUP_ALLOWED_DOMAINS: &str = "MACRO_SIGNUP_ALLOWED_DOMAINS";
+/// A prebuilt static bundle (`stack build-frontend`) to serve instead of
+/// building one with bun.
+pub const FRONTEND_BUNDLE: &str = "MACRO_FRONTEND_BUNDLE";
 
 /// The internal service key, written under every name a service reads it by
 /// and into the FusionAuth webhook headers.
@@ -54,7 +57,7 @@ pub const FUSIONAUTH_API_KEY: &str = "FUSIONAUTH_API_KEY";
 
 /// The settings that exist only here; the two keys above are written by
 /// [`super::local_env::LocalEnv`] under each of their names.
-const KEYS: [&str; 14] = [
+const KEYS: [&str; 15] = [
     PUBLIC_ORIGIN,
     FUSIONAUTH_PUBLIC_URL,
     BIND_ADDRESS,
@@ -69,6 +72,7 @@ const KEYS: [&str; 14] = [
     MAIL_FROM,
     MAIL_FROM_NAME,
     SIGNUP_ALLOWED_DOMAINS,
+    FRONTEND_BUNDLE,
 ];
 
 /// Today's Postgres password, baked into `docker/docker-compose-databases.yml`.
@@ -93,6 +97,7 @@ pub struct SelfHost {
     pub mail_from: Option<String>,
     pub mail_from_name: Option<String>,
     pub signup_allowed_domains: Option<String>,
+    pub frontend_bundle: Option<String>,
 }
 
 /// A configured SMTP server, as FusionAuth and the services both use it.
@@ -129,6 +134,7 @@ impl SelfHost {
             mail_from: get(MAIL_FROM),
             mail_from_name: get(MAIL_FROM_NAME),
             signup_allowed_domains: get(SIGNUP_ALLOWED_DOMAINS),
+            frontend_bundle: get(FRONTEND_BUNDLE),
         }
     }
 
@@ -236,6 +242,7 @@ impl SelfHost {
             &self.mail_from,
             &self.mail_from_name,
             &self.signup_allowed_domains,
+            &self.frontend_bundle,
         ];
         for (key, value) in KEYS.into_iter().zip(values) {
             if let Some(value) = value {
