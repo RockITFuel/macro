@@ -18,6 +18,7 @@ pub mod deferred_tools;
 pub mod do_not;
 pub mod document_content_links;
 pub mod email;
+pub mod flowcharts;
 pub mod math;
 pub mod mcp_item_links;
 pub mod mentions;
@@ -30,10 +31,11 @@ pub mod user_tools;
 
 pub use types::{ComposedPrompt, Section, StaticPrompt};
 
-/// The base prompt: tone, math, citations, mentions, do-not rules, and Macro
+/// The base prompt: tone, math, flowcharts, citations, mentions, do-not rules, and Macro
 /// terms. Contains no tool use instructions.
 pub static BASE_PROMPT: ComposedPrompt = tone::PROMPT
     .compose(&math::PROMPT)
+    .compose(&flowcharts::PROMPT)
     .compose(&citations::PROMPT)
     .compose(&mentions::PROMPT)
     .compose(&do_not::PROMPT)

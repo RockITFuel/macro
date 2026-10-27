@@ -6,10 +6,15 @@ export type Box = { x: number; y: number; width: number; height: number };
 export type LaidOutNode = { node: FlowNode; box: Box };
 export type LaidOutGroup = { group: FlowGroup; box: Box; depth: number };
 
+export type Point = { x: number; y: number };
+
+/** An edge along dagre's route: its bends and where its label sits. */
+export type LaidOutEdge = { edge: FlowEdge; points: Point[]; labelAt?: Point };
+
 export type FlowLayout = {
   nodes: LaidOutNode[];
   groups: LaidOutGroup[];
-  edges: FlowEdge[];
+  edges: LaidOutEdge[];
   bounds: Box;
 };
 
@@ -85,8 +90,8 @@ export function layoutFlow(graph: FlowGraph): FlowLayout {
   const horizontal = graph.direction === 'LR' || graph.direction === 'RL';
   g.setGraph({
     rankdir: graph.direction,
-    nodesep: horizontal ? 28 : 40,
-    ranksep: horizontal ? 64 : 56,
+    nodesep: horizontal ? 24 : 36,
+    ranksep: horizontal ? 56 : 40,
     edgesep: 16,
     marginx: 8,
     marginy: 8,
@@ -196,10 +201,20 @@ export function layoutFlow(graph: FlowGraph): FlowLayout {
     depth: depthOf(group),
   }));
 
+  const edges: LaidOutEdge[] = graph.edges.map((edge) => {
+    const placed = g.edge({ v: edge.source, w: edge.target, name: edge.id });
+    const points = (placed?.points ?? []).map((p) => ({ x: p.x, y: p.y }));
+    const labelAt =
+      edge.label && placed?.x !== undefined && placed.y !== undefined
+        ? { x: placed.x, y: placed.y }
+        : undefined;
+    return { edge, points, labelAt };
+  });
+
   return {
     nodes,
     groups,
-    edges: graph.edges,
+    edges,
     bounds: union([...nodes.map((n) => n.box), ...groups.map((g) => g.box)]),
   };
 }
@@ -211,4 +226,73 @@ function union(boxes: Box[]): Box {
   const right = Math.max(...boxes.map((b) => b.x + b.width));
   const bottom = Math.max(...boxes.map((b) => b.y + b.height));
   return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+/**
+ * An orthogonal path through `points` (Alpha's step edges): each hop leaves along
+ * the flow axis, turns once halfway, and arrives along it again; corners are
+ * rounded by `radius`.
+ */
+export function stepPath(
+  points: Point[],
+  horizontal: boolean,
+  radius = 8
+): string {
+  const route = simplify(points);
+  if (route.length < 2) return '';
+  const corners: Point[] = [route[0]];
+  for (let i = 1; i < route.length; i++) {
+    const from = route[i - 1];
+    const to = route[i];
+    if (horizontal ? from.y !== to.y : from.x !== to.x) {
+      const mid = horizontal ? (from.x + to.x) / 2 : (from.y + to.y) / 2;
+      corners.push(
+        horizontal ? { x: mid, y: from.y } : { x: from.x, y: mid },
+        horizontal ? { x: mid, y: to.y } : { x: to.x, y: mid }
+      );
+    }
+    corners.push(to);
+  }
+  return roundedPolyline(simplify(corners), radius);
+}
+
+/** Drops points on a straight line with their neighbours and near-duplicates. */
+function simplify(points: Point[]): Point[] {
+  const snapped: Point[] = [];
+  for (const point of points) {
+    const last = snapped[snapped.length - 1];
+    if (last && Math.abs(last.x - point.x) < 1 && Math.abs(last.y - point.y) < 1)
+      continue;
+    snapped.push(point);
+  }
+  return snapped.filter((point, i) => {
+    if (i === 0 || i === snapped.length - 1) return true;
+    const a = snapped[i - 1];
+    const b = snapped[i + 1];
+    return !(
+      (Math.abs(a.x - point.x) < 1 && Math.abs(b.x - point.x) < 1) ||
+      (Math.abs(a.y - point.y) < 1 && Math.abs(b.y - point.y) < 1)
+    );
+  });
+}
+
+function roundedPolyline(points: Point[], radius: number): string {
+  const fmt = (p: Point) => `${Math.round(p.x * 10) / 10},${Math.round(p.y * 10) / 10}`;
+  let d = `M${fmt(points[0])}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [a, b, c] = [points[i - 1], points[i], points[i + 1]];
+    const inLength = Math.hypot(b.x - a.x, b.y - a.y);
+    const outLength = Math.hypot(c.x - b.x, c.y - b.y);
+    const r = Math.min(radius, inLength / 2, outLength / 2);
+    const before = {
+      x: b.x - ((b.x - a.x) / inLength) * r,
+      y: b.y - ((b.y - a.y) / inLength) * r,
+    };
+    const after = {
+      x: b.x + ((c.x - b.x) / outLength) * r,
+      y: b.y + ((c.y - b.y) / outLength) * r,
+    };
+    d += `L${fmt(before)}Q${fmt(b)} ${fmt(after)}`;
+  }
+  return `${d}L${fmt(points[points.length - 1])}`;
 }

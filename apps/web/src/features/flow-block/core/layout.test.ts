@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Box } from './layout';
-import { layoutFlow, nodeSize } from './layout';
+import { layoutFlow, nodeSize, stepPath } from './layout';
 import { parseMermaid } from './parse-mermaid';
 
 const contains = (outer: Box, inner: Box) =>
@@ -77,5 +77,37 @@ describe('layoutFlow', () => {
       classes: [],
     });
     expect(circle.width).toBe(circle.height);
+  });
+
+  it('routes every edge and places labels on the route', () => {
+    const layout = layoutFlow(
+      parseMermaid('graph TD\nA -->|yes| B\nA --> C\nB --> C')._unsafeUnwrap()
+    );
+    for (const { points } of layout.edges) {
+      expect(points.length).toBeGreaterThanOrEqual(2);
+    }
+    expect(layout.edges[0].labelAt).toBeDefined();
+    expect(layout.edges[1].labelAt).toBeUndefined();
+  });
+});
+
+describe('stepPath', () => {
+  it('draws a straight hop as one line', () => {
+    expect(stepPath([{ x: 0, y: 0 }, { x: 0, y: 50 }], false)).toBe('M0,0L0,50');
+  });
+
+  it('turns once halfway along the flow axis, with rounded corners', () => {
+    expect(stepPath([{ x: 0, y: 0 }, { x: 40, y: 60 }], false, 8)).toBe(
+      'M0,0L0,22Q0,30 8,30L32,30Q40,30 40,38L40,60'
+    );
+    expect(stepPath([{ x: 0, y: 0 }, { x: 60, y: 40 }], true, 8)).toBe(
+      'M0,0L22,0Q30,0 30,8L30,32Q30,40 38,40L60,40'
+    );
+  });
+
+  it('ignores points on a straight line', () => {
+    expect(
+      stepPath([{ x: 0, y: 0 }, { x: 0, y: 20 }, { x: 0, y: 50 }], false)
+    ).toBe('M0,0L0,50');
   });
 });

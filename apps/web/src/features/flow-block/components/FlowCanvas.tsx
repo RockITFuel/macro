@@ -1,5 +1,7 @@
 import {
   Background,
+  BaseEdge,
+  type EdgeProps,
   Controls,
   createEdgeStore,
   createNodeStore,
@@ -21,7 +23,7 @@ import {
   type FlowStyle,
   nodeStyle,
 } from '../core/graph';
-import type { FlowLayout } from '../core/layout';
+import { type FlowLayout, type Point, stepPath } from '../core/layout';
 import '../flow-block.css';
 
 type StepData = { node: FlowNode; style: FlowStyle; direction: FlowDirection };
@@ -107,6 +109,34 @@ function FlowGroupBox(props: NodeProps<GroupData, 'cluster'>) {
 
 const nodeTypes = { step: FlowStep, cluster: FlowGroupBox };
 
+type RouteData = { points: Point[]; labelAt?: Point; horizontal: boolean };
+
+/** Follows dagre's route instead of a straight handle-to-handle step. */
+function RoutedEdge(props: EdgeProps<RouteData, 'routed'>) {
+  const route = () => {
+    const data = props.data;
+    return data && data.points.length >= 2
+      ? data.points
+      : [
+          { x: props.sourceX, y: props.sourceY },
+          { x: props.targetX, y: props.targetY },
+        ];
+  };
+  return (
+    <BaseEdge
+      path={stepPath(route(), props.data?.horizontal ?? false)}
+      label={props.label}
+      labelX={props.data?.labelAt?.x}
+      labelY={props.data?.labelAt?.y}
+      markerStart={props.markerStart}
+      markerEnd={props.markerEnd}
+      interactionWidth={0}
+    />
+  );
+}
+
+const edgeTypes = { routed: RoutedEdge };
+
 function toNodes(graph: FlowGraph, layout: FlowLayout) {
   const groups = [...layout.groups]
     .sort((a, b) => a.depth - b.depth)
@@ -140,12 +170,14 @@ function toNodes(graph: FlowGraph, layout: FlowLayout) {
   return [...groups, ...steps];
 }
 
-function toEdges(layout: FlowLayout) {
-  return layout.edges.map((edge) => ({
+function toEdges(graph: FlowGraph, layout: FlowLayout) {
+  const horizontal = graph.direction === 'LR' || graph.direction === 'RL';
+  return layout.edges.map(({ edge, points, labelAt }) => ({
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: 'smoothstep' as const,
+    type: 'routed' as const,
+    data: { points, labelAt, horizontal },
     label: edge.label,
     class: `flow-edge flow-edge--${edge.stroke}`,
     markerEnd: edge.arrowEnd
@@ -173,7 +205,9 @@ export function FlowCanvas(props: {
   const [nodes] = createNodeStore<typeof nodeTypes>(
     toNodes(props.graph, props.layout)
   );
-  const [edges] = createEdgeStore(toEdges(props.layout));
+  const [edges] = createEdgeStore<typeof edgeTypes>(
+    toEdges(props.graph, props.layout)
+  );
   const touch = isTouchDevice();
 
   return (
@@ -183,8 +217,9 @@ export function FlowCanvas(props: {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.12, maxZoom: 1 }}
+        fitViewOptions={{ padding: 0.08, maxZoom: 1 }}
         minZoom={0.15}
         maxZoom={2.5}
         nodesDraggable={false}

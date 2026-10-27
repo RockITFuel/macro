@@ -736,7 +736,7 @@ mark {
 
 /* A flow block showing its chart: the code keeps its place under the overlay. */
 .md-code-box.md-flow-diagram {
-  height: calc(360px + 3rem);
+  height: calc(400px + 3rem);
   overflow: hidden;
 
   > * {
@@ -750,6 +750,6 @@ mark {
 
 @media (max-width: 639px) {
   .md-code-box.md-flow-diagram {
-    height: calc(300px + 3rem);
+    height: calc(320px + 3rem);
   }
 }

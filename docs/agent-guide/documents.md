@@ -134,6 +134,16 @@ Markdown code blocks have a **Copy Code** button in both editable and read-only
 views. Successful copies briefly animate the icon to a solid green check-circle;
 they do not show a success toast.
 
+Code blocks in `mermaid` (flowchart subset) or `flow` (JSON/YAML nodes, edges,
+groups) open as an interactive flowchart with **Diagram** / **Source** tabs in
+the block header; empty blocks open on Source. The tab is per viewer and never
+edits the document. Agent chat answers draw the same chart. To verify, paste a
+fenced ```` ```mermaid ```` block into the document body (typing into the
+Discussion composer posts comments instead), check pan, the zoom and fit
+controls, then edit the source and switch back: the chart follows, and a broken
+line keeps the last chart with a `Line n:` notice. Syntax and layout live in
+`apps/web/src/features/flow-block/AGENTS.md`.
+
 Embedded code files, canvases, and PDFs in Markdown documents show their content
 below the card header, including when the document opens in a drive detail view.
 Project cards remain header-only. To verify, reopen a document with existing

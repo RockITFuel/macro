@@ -16,7 +16,7 @@ export function FlowPreview(props: {
 }) {
   return (
     <div
-      class={cn('h-[360px] w-full mobile:h-[300px]', props.class)}
+      class={cn('h-[400px] w-full mobile:h-[320px]', props.class)}
       data-flow-preview
     >
       <Suspense>
