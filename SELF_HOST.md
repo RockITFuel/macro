@@ -166,6 +166,17 @@ redirect URI on `macro.alphamonitoring.app` and the delegated scopes in
 `MICROSOFT_TOKEN_KMS_KEY_ID` (a LocalStack KMS key) on the authentication
 service. Secrets go in 1Password, vault Alpha.
 
+## Speech-to-text
+
+Calls are transcribed live by the LiveKit agent in `services/transcription`,
+which upstream runs on LiveKit Cloud with Deepgram; dictation uses OpenAI
+Whisper. Here both can run on our own machines instead: a Redis queue on
+morgo-warsaw (Tailscale only), a router, and Parakeet workers on luka-mini
+(CPU), the MacBook (MLX) and, as a live-only fallback, Warsaw. Off until
+`LIVEKIT_TRANSCRIPTION_AGENT_NAME=macro-transcriber` and
+`DICTATION_STT_API_BASE`/`DICTATION_STT_API_KEY` are in the env file. Models,
+routing rules and rollout: [services/transcription/LOCAL_STT.md](services/transcription/LOCAL_STT.md).
+
 ## Deploying
 
 - `tooling/self-host/release-luka-mini.sh` (on luka-mini) builds and pushes
