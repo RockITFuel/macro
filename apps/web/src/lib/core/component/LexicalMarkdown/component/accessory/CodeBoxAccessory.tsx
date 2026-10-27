@@ -2,6 +2,12 @@
  * @file This component rendered the accessory for the code nodes - a copy button and a syntax highlighting
  * language selector.
  */
+import {
+  type FlowMode,
+  FlowModeTabs,
+  FlowPreview,
+  flowLanguage,
+} from '@app/features/flow-block';
 import { isInBlock, useIsNestedBlock } from '@core/block';
 import { ENABLE_SVG_PREVIEW } from '@core/constant/featureFlags';
 import Braces from '@icon/system/regular/brackets-curly.svg';
@@ -18,6 +24,7 @@ import FileRs from '@icon/system/regular/file-rs.svg';
 import FileSql from '@icon/system/regular/file-sql.svg';
 import FileTs from '@icon/system/regular/file-ts.svg';
 import TrashCan from '@icon/system/regular/trash-simple.svg';
+import TreeStructure from '@icon/system/regular/tree-structure.svg';
 import { Switch } from '@kobalte/core/switch';
 import { $isCodeNode, CodeNode } from '@lexical/code';
 import {
@@ -39,7 +46,10 @@ import {
   createEffect,
   createSignal,
   For,
+  on,
+  onCleanup,
   Show,
+  untrack,
 } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { glueToElement } from '../../directive/glueToElement';
@@ -67,6 +77,8 @@ const LanguageIcons: Record<
   sql: FileSql,
   bash: FileCode,
   svg: FileCode,
+  mermaid: TreeStructure,
+  flow: TreeStructure,
 };
 
 function StaticLabel(props: { language: SupportedLanguage }) {
@@ -156,29 +168,73 @@ export function CodeBoxAccessory(props: {
 
   const isNested = isInBlock() && useIsNestedBlock();
 
-  if (ENABLE_SVG_PREVIEW) {
-    autoRegister(
-      props.editor.registerMutationListener(
-        CodeNode,
-        (mutations) => {
-          const match = mutations.get(props.nodeKey);
-          if (match === 'created' || match === 'updated') {
-            queueMicrotask(() =>
-              props.editor.read(() => {
-                const node = $getNodeByKey(props.nodeKey);
-                if (!$isCodeNode(node)) return;
-                setLanguage(node.getLanguage() ?? 'plain');
-                if ($isCustomCodeNode(node)) {
-                  setIsPreviewMode(node.getPreviewEnabled());
-                }
-              })
-            );
-          }
-        },
-        { skipInitialization: false }
-      )
+  const readCode = () =>
+    props.editor.read(
+      () => $getNodeByKey(props.nodeKey)?.getTextContent() ?? ''
     );
-  }
+  const [code, setCode] = createSignal(readCode());
+
+  autoRegister(
+    props.editor.registerMutationListener(
+      CodeNode,
+      (mutations) => {
+        const match = mutations.get(props.nodeKey);
+        if (match === 'created' || match === 'updated') {
+          queueMicrotask(() =>
+            props.editor.read(() => {
+              const node = $getNodeByKey(props.nodeKey);
+              if (!$isCodeNode(node)) return;
+              setLanguage(node.getLanguage() ?? 'plain');
+              setCode(node.getTextContent());
+              if (ENABLE_SVG_PREVIEW && $isCustomCodeNode(node)) {
+                setIsPreviewMode(node.getPreviewEnabled());
+              }
+            })
+          );
+        }
+      },
+      { skipInitialization: false }
+    )
+  );
+
+  // Text edits dirty the code node without replacing it, so the mutation
+  // listener above doesn't see them.
+  autoRegister(
+    props.editor.registerUpdateListener(({ dirtyElements }) => {
+      if (dirtyElements.has(props.nodeKey)) setCode(readCode());
+    })
+  );
+
+  // Diagram or source is this viewer's choice, never stored on the node. A
+  // block opens as a diagram unless it is empty (being written).
+  const flow = () => flowLanguage(language());
+  const [flowMode, setFlowMode] = createSignal<FlowMode | null>(null);
+  createEffect(
+    on(flow, (current) => {
+      if (!current) setFlowMode(null);
+      else if (untrack(flowMode) === null) {
+        setFlowMode(untrack(code).trim() ? 'diagram' : 'source');
+      }
+    })
+  );
+  const showFlow = () => flow() !== null && flowMode() === 'diagram';
+
+  createEffect(() => {
+    if (isNested) return;
+    const element = props.floatRef;
+    const diagram = showFlow();
+    element.classList.toggle('md-flow-diagram', diagram);
+    if (diagram) element.contentEditable = 'false';
+    else if (element.classList.contains('preview-mode') === false) {
+      element.removeAttribute('contenteditable');
+    }
+  });
+  onCleanup(() => {
+    props.floatRef.classList.remove('md-flow-diagram');
+    if (!props.floatRef.classList.contains('preview-mode')) {
+      props.floatRef.removeAttribute('contenteditable');
+    }
+  });
 
   const copyCode = async () => {
     const code = props.editor.read(() => {
@@ -244,6 +300,13 @@ export function CodeBoxAccessory(props: {
             editor={props.editor}
           />
           <div class="flex items-center h-full">
+            <Show when={flowMode()}>
+              {(mode) => (
+                <div class="mr-1 flex items-center">
+                  <FlowModeTabs mode={mode()} onChange={setFlowMode} />
+                </div>
+              )}
+            </Show>
             <Show when={showPreviewToggle()}>
               <div class="flex items-center gap-2 mr-2">
                 <div class="text-xs text-ink-extra-muted/50">Preview</div>
@@ -291,6 +354,17 @@ export function CodeBoxAccessory(props: {
             </CopyButton>
           </div>
         </div>
+        <Show when={showFlow() && flow()}>
+          {(current) => (
+            <div class="absolute top-12 inset-x-0 bottom-0 z-10 pointer-events-auto">
+              <FlowPreview
+                language={current()}
+                source={code()}
+                class="h-full mobile:h-full"
+              />
+            </div>
+          )}
+        </Show>
         <Show when={isPreviewMode() && showPreviewToggle()}>
           <SvgPreview
             svgContent={() => {
@@ -395,6 +469,9 @@ export const StaticCodeBoxAccessory = (props: {
   theme: EditorThemeClasses;
   isPreviewMode?: () => boolean;
   setIsPreviewMode?: (enabled: boolean) => void;
+  /** Present for flow blocks: the Diagram/Source choice. */
+  flowMode?: Accessor<FlowMode>;
+  setFlowMode?: (mode: FlowMode) => void;
 }) => {
   let ref!: HTMLDivElement;
   const [localPreviewMode, setLocalPreviewMode] = createSignal(false);
@@ -433,6 +510,14 @@ export const StaticCodeBoxAccessory = (props: {
       >
         <StaticLabel language={language()} />
         <div class="flex gap-2 items-center">
+          <Show when={props.flowMode}>
+            {(mode) => (
+              <FlowModeTabs
+                mode={mode()()}
+                onChange={(next) => props.setFlowMode?.(next)}
+              />
+            )}
+          </Show>
           <Show when={showPreviewToggle()}>
             <div class="flex items-center gap-2">
               <div class={cn('text-xs', textColor())}>Preview</div>

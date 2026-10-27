@@ -733,3 +733,23 @@ mark {
   text-decoration-color: var(--diff-author-color, hsl(0, 65%, 55%));
   opacity: 0.6;
 }
+
+/* A flow block showing its chart: the code keeps its place under the overlay. */
+.md-code-box.md-flow-diagram {
+  height: calc(360px + 3rem);
+  overflow: hidden;
+
+  > * {
+    display: none;
+  }
+}
+
+.md-code-box.md-flow-diagram::before {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .md-code-box.md-flow-diagram {
+    height: calc(300px + 3rem);
+  }
+}
