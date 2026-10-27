@@ -66,6 +66,7 @@ public instance. Unset, it is the localhost development stack.
 | `MACRO_FUSIONAUTH_ADMIN_PASSWORD` | Password of the FusionAuth admin `admin@macro.com`. |
 | `MACRO_SMTP_HOST`, `MACRO_SMTP_PORT`, `MACRO_SMTP_SECURITY`, `MACRO_SMTP_USERNAME`, `MACRO_SMTP_PASSWORD` | SMTP server for FusionAuth's login codes and the auth service's mail (invites, verification). `SECURITY` is `SSL` (implicit TLS, default port 465), `TLS` (STARTTLS, 587) or `NONE`. Unset, mail goes to Mailpit. Required with `MACRO_PUBLIC_ORIGIN`. |
 | `MACRO_MAIL_FROM`, `MACRO_MAIL_FROM_NAME` | Sender of all that mail; it replaces the services' own `auth@macro.com`. Required with `MACRO_PUBLIC_ORIGIN`. |
+| `MACRO_FRONTEND_BUNDLE` | Directory with a prebuilt static bundle (`index.html` at its root) that `stack up` and `stack update --frontend` serve instead of building with bun. |
 | `MACRO_SIGNUP_ALLOWED_DOMAINS` | Comma-separated email domains that may create an account, by any sign-in method. Existing users keep signing in; invited users from other domains are refused. |
 
 Secrets go in the same env file and reach the services and the kickstart
@@ -76,6 +77,16 @@ alike: `INTERNAL_AUTH_KEY`, `FUSIONAUTH_API_KEY`, `FUSIONAUTH_CLIENT_SECRET_KEY`
 bytes) and `MCP_CREDENTIALS_KEY_SECRET_NAME` (base64 of 32 bytes). Avoid `$` in
 values: compose interpolates them. Changing a kickstart secret re-inits
 FusionAuth on the next `stack up`.
+
+The server has no bun: build the bundle on luka-mini with
+`cargo x stack build-frontend --no-doppler --env-file ./selfhost.env --out <dir>`
+(it builds the wasm modules first; needs `wasm-pack`) and copy it over. The
+bundle is the same for every origin; rebuild it for a new commit, or when the
+GitHub client is added or removed.
+
+A public stack runs no local agent sandboxes: `DEV_DANGEROUS_LOCAL_CONTAINERS`
+is `false`, the harness gets no Docker socket and no sandbox image is built.
+`@coder` sessions need `DAYTONA_API_KEY` instead.
 
 Our values: `smtp.mx.cloudflare.net`, `SSL`, port 465, sender
 `noreply@alphamonitoring.app` named `Macro`, domains
