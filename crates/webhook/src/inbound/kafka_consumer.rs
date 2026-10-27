@@ -124,6 +124,9 @@ async fn ingest_with_retry<S: WebhookEventIngestionService>(
                             .ingest_agent_session_lifecycle_event(event.event().clone())
                             .await
                     }
+                    DeclaredMacroEvent::PropertyMacroEvent(event) => {
+                        service.ingest_property_event(event.event().clone()).await
+                    }
                 };
 
                 match &result {

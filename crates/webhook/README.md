@@ -77,10 +77,20 @@ bookkeeping (including success/failure timestamp updates) do not produce them.
 
 The `webhook-event-ingestion` Kafka consumer reads `macro.documents`,
 `macro.channels`, `macro.messages`, `macro.webhooks`, `macro.agent_sessions`,
-and `macro.agent_session_lifecycle`. It supports these event names:
+`macro.agent_session_lifecycle`, and `macro.properties`. It supports these
+event names:
 
 - Documents: `document.created`, `document.updated`, `document.deleted`, and
   `document.copied`.
+- Task and document properties: `entity_property.updated`,
+  `entity_property.deleted`, and `entity_properties.cleared`, for a task's or
+  document's own values (status, priority, assignees, labels, custom
+  properties). The payload is the `macro.properties` envelope: `entity_id`
+  (the task's document id), `entity_type` (`TASK` or `DOCUMENT`),
+  `property_definition_id`, the actor and, for an update, `value` and
+  `previous_value`. They are document events for access and filtering.
+  Definition and option events, and properties of other entities (CRM, database
+  rows, projects), are not delivered.
 - Channels: `channel.created`, `channel.updated`, `channel.deleted`,
   `channel.participant_added`, and `channel.participant_removed`.
 - Messages, on channels and document discussions alike: `message.posted`,
@@ -151,7 +161,8 @@ matches every entity ID for that filter's events:
 ]
 ```
 
-For document events, IDs always mean the event's `document_id`. For every
+For document events, IDs always mean the event's `document_id`; for property
+events, the task's or document's id (`metadata.entity_id`). For every
 channel event, IDs mean `channel_id`. This includes attachment and participant
 events: their attachment and participant IDs are not used for webhook filtering.
 For message events, IDs mean the parent's id (`metadata.parent.id`, a channel

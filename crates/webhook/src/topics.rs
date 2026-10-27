@@ -11,6 +11,7 @@ use agent_trigger::domain::broker_events::AgentSessionMacroEvent;
 use channels::domain::broker_events::ChannelMacroEvent;
 use documents::domain::events::DocumentMacroEvent;
 use messages::outbound::broker::MessageMacroEvent;
+use properties::domain::events::PropertyMacroEvent;
 
 macro_event_broker::declare_topics!(
     DeclaredMacroEvent: DocumentMacroEvent,
@@ -19,4 +20,5 @@ macro_event_broker::declare_topics!(
     WebhookMacroEvent,
     AgentSessionMacroEvent,
     AgentSessionLifecycleMacroEvent,
+    PropertyMacroEvent,
 );
