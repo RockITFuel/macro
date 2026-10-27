@@ -6,9 +6,17 @@ use aws_sdk_sesv2 as ses;
 #[allow(unused_imports)]
 use mockall::automock;
 
+use send_email_smtp::SmtpConfig;
+
 macro_env_var::maybe_env_vars! {
     struct SmtpHost;
     struct SmtpPort;
+    /// `NONE` (default), `SSL` (implicit TLS) or `TLS` (STARTTLS).
+    struct SmtpSecurity;
+    struct SmtpUsername;
+    struct SmtpPassword;
+    /// Sender replacing every from-address, e.g. `Macro <noreply@example.com>`.
+    struct SmtpFrom;
 }
 
 #[cfg(test)]
@@ -16,12 +24,13 @@ pub use MockSesClient as Ses;
 #[cfg(not(test))]
 pub use SesClient as Ses;
 
-/// How outbound mail is delivered. SES in dev/prod; SMTP to a local Mailpit in
-/// local mode (selected by the `SMTP_HOST` env var).
+/// How outbound mail is delivered. SES in dev/prod; SMTP in local mode
+/// (selected by the `SMTP_HOST` env var): Mailpit, or a self-hosted
+/// instance's real server.
 #[derive(Clone, Debug)]
 enum Transport {
     Ses(ses::Client),
-    Smtp { host: String, port: u16 },
+    Smtp(SmtpConfig),
 }
 
 #[derive(Clone, Debug)]
@@ -33,24 +42,27 @@ pub struct SesClient {
 
 #[cfg_attr(test, automock)]
 impl SesClient {
-    /// Construct from the environment: route to local SMTP (Mailpit) when
-    /// `SMTP_HOST` is set, otherwise SES. The SES client is still passed in (and
-    /// kept for the SES path) so callers don't branch.
-    pub fn from_env(inner: ses::Client, environment: &str) -> Self {
-        let transport = match SmtpHost::new().and_then(|host| host.value().map(str::to_string)) {
-            Some(host) if !host.is_empty() => {
-                let port = SmtpPort::new()
-                    .and_then(|p| p.value().and_then(|p| p.parse().ok()))
-                    .unwrap_or(1025);
-                Transport::Smtp { host, port }
-            }
-            _ => Transport::Ses(inner),
+    /// Construct from the environment: route to SMTP when `SMTP_HOST` is set,
+    /// otherwise SES. The SES client is still passed in (and kept for the SES
+    /// path) so callers don't branch. Fails on malformed `SMTP_*` settings.
+    pub fn from_env(inner: ses::Client, environment: &str) -> anyhow::Result<Self> {
+        let value = |var: Option<String>| var.filter(|v| !v.is_empty());
+        let transport = match value(SmtpHost::new().and_then(|v| v.value().map(str::to_owned))) {
+            Some(host) => Transport::Smtp(SmtpConfig::from_values(
+                &host,
+                value(SmtpPort::new().and_then(|v| v.value().map(str::to_owned))).as_deref(),
+                value(SmtpSecurity::new().and_then(|v| v.value().map(str::to_owned))).as_deref(),
+                value(SmtpUsername::new().and_then(|v| v.value().map(str::to_owned))).as_deref(),
+                value(SmtpPassword::new().and_then(|v| v.value().map(str::to_owned))).as_deref(),
+                value(SmtpFrom::new().and_then(|v| v.value().map(str::to_owned))).as_deref(),
+            )?),
+            None => Transport::Ses(inner),
         };
-        Self {
+        Ok(Self {
             transport,
             invite_email: None,
             environment: environment.to_string(),
-        }
+        })
     }
 
     /// Sets the invite_email
@@ -101,11 +113,9 @@ impl SesClient {
             Transport::Ses(client) => {
                 send_email::send_email(client, from_email, to_email, subject, content).await
             }
-            Transport::Smtp { host, port } => {
-                send_email_smtp::send_email_smtp(
-                    host, *port, from_email, to_email, subject, content,
-                )
-                .await
+            Transport::Smtp(config) => {
+                send_email_smtp::send_email_smtp(config, from_email, to_email, subject, content)
+                    .await
             }
         }
     }
