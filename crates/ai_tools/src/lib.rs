@@ -46,6 +46,7 @@ use databases::inbound::toolset::{databases_read_only_toolset, databases_toolset
 use databases_sql::toolset::{QueryDatabase, databases_sql_toolset};
 use display_results::DisplayResults;
 use documents::inbound::toolset::document_toolset;
+use documents::inbound::toolset::render_html::RenderHtml;
 use email::inbound::toolset::{email_toolset, mcp_toolset as email_mcp_toolset};
 use favorites::inbound::toolset::favorites_toolset;
 use import::inbound::toolset::import_toolset;
@@ -248,6 +249,7 @@ pub const EAGER_TOOLS: &[&str] = &[
     "ReadContent",
     "ReadMetadata",
     "ReadSkill",
+    "RenderHtml",
     "SearchSkills",
     "SearchTools",
     "SelfKnowledge",
@@ -315,9 +317,11 @@ fn tools_for_inner(host: AiHost, code_mode_direct: bool) -> ToolSetWithPrompt {
         AiHost::Mcp => toolset,
     };
     let toolset = match host {
-        AiHost::Chat | AiHost::AgentSession => {
-            toolset.add_tool::<DisplayResults, ToolServiceContext>()
-        }
+        // Rendering an HTML page inline needs a transcript that renders tool
+        // views; elsewhere it would only save a document nobody sees.
+        AiHost::Chat | AiHost::AgentSession => toolset
+            .add_tool::<DisplayResults, ToolServiceContext>()
+            .add_tool::<RenderHtml, ToolDocumentToolContext>(),
         AiHost::ChannelBot | AiHost::Mcp => toolset,
     };
     // A direct upload needs a client that can PUT the bytes itself; in-app

@@ -28,6 +28,10 @@ word docs, Illustrator/Photoshop files).
   immutable revision, crop/object mapping and actual DOM text bounds.
 - `src/inbound/toolset.rs`: one submodule per AI document tool (`create_document`,
   `edit_document`, `word_document`, `spreadsheet`, `presentation`, ...).
+  `render_html` (`RenderHtml`) saves an agent's self-contained page as an
+  HTML document and returns its id and clamped frame height; it is not in
+  `document_toolset`: `ai_tools` registers it only for hosts whose
+  transcripts render it (AI chat, agent sessions).
 - `src/inbound/axum_router.rs`: the HTTP surface; `axum_router/get_text.rs`
   serves `/text-content` through `src/domain/text.rs`. Native Markdown comes
   from live collaborative storage, not the legacy S3 export.

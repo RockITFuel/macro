@@ -12,6 +12,7 @@ mod presentation;
 mod read_content;
 mod read_metadata;
 mod rename_document;
+pub mod render_html;
 mod spreadsheet;
 mod upload_file;
 mod word_document;

@@ -796,3 +796,27 @@ fn mcp_code_mode_hides_sdk_covered_tools_and_keeps_the_rest() {
             .all(|name| standard.tools.contains_key(name))
     );
 }
+
+#[test]
+fn render_html_is_offered_only_where_transcripts_render_it() {
+    for host in [AiHost::Chat, AiHost::AgentSession] {
+        assert!(
+            tools_for(host).toolset.tools.contains_key("RenderHtml"),
+            "{host:?} renders the page inline"
+        );
+    }
+    for host in [AiHost::ChannelBot, AiHost::Mcp] {
+        assert!(
+            !tools_for(host).toolset.tools.contains_key("RenderHtml"),
+            "{host:?} has no transcript to show the page in"
+        );
+    }
+    assert!(
+        tools_for_agent_code_mode()
+            .toolset
+            .tools
+            .contains_key("RenderHtml")
+    );
+    // Eager, so agents reach for it without loading it first.
+    assert!(EAGER_TOOLS.contains(&"RenderHtml"));
+}
