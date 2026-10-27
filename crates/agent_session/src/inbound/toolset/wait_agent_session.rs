@@ -27,7 +27,9 @@ use crate::domain::{
 )]
 pub struct WaitAgentSession {
     /// Session to wait on.
-    #[schemars(description = "The agent session UUID from its mention, search result, or creation.")]
+    #[schemars(
+        description = "The agent session UUID from its mention, search result, or creation."
+    )]
     pub session_id: uuid::Uuid,
     /// How long to wait.
     #[schemars(

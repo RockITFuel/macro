@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
 use super::*;
-use crate::domain::{read::SessionReader, sharing::SessionSharingService, wait::{SessionWaiter, TurnSignals}};
+use crate::domain::{
+    read::SessionReader,
+    sharing::SessionSharingService,
+    wait::{SessionWaiter, TurnSignals},
+};
 use crate::testing::InMemoryAgentSessionRepo;
 use entity_access::domain::ports::NoOpEntityAccessService;
 use macro_user_id::user_id::MacroUserIdStr;

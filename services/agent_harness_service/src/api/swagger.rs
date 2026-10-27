@@ -20,14 +20,14 @@ use agent_harness::inbound::tool_approvals::{
 };
 use agent_runtime_protocol::domain::action::{AgentAction, AgentActionId, PromptAttachment};
 use agent_session::domain::model::{SandboxSize, SessionBot};
+use agent_session::domain::pull_request_links::{
+    PullRequestLinkSource, PullRequestLinkedSession, PullRequestSessions, SessionPullRequestLink,
+};
 use agent_session::domain::read::{
     SessionConversation, SessionConversationMessage, SessionMessageRole,
 };
 use agent_session::domain::wait::{
     PendingRequest, PendingRequestKind, SessionWait, SessionWaitStatus,
-};
-use agent_session::domain::pull_request_links::{
-    PullRequestLinkSource, PullRequestLinkedSession, PullRequestSessions, SessionPullRequestLink,
 };
 use agent_session::inbound::axum_router::pull_requests::{
     PullRequestSessionsResponse, PullRequestUrl, PullRequestUrls, PullRequestsSessionsResponse,

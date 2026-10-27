@@ -116,9 +116,7 @@ impl<R: AgentSessionRepo + AgentSessionLogRepo> SessionReader<R> {
 }
 
 /// The agent session a view-access capability names, refusing any other entity.
-pub(super) fn session_id(
-    access: &EntityAccessReceipt<ViewAccessLevel>,
-) -> Result<AgentSessionId> {
+pub(super) fn session_id(access: &EntityAccessReceipt<ViewAccessLevel>) -> Result<AgentSessionId> {
     if access.entity().entity_type != EntityType::AgentSession {
         return Err(AgentSessionError::Forbidden);
     }

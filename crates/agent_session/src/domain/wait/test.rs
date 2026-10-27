@@ -124,7 +124,14 @@ async fn a_finished_turn_wakes_the_waiter_before_its_deadline() {
     let deadline = tokio::time::Instant::now() + DEFAULT_WAIT;
     let waiter = tokio::spawn({
         let session = session.clone();
-        async move { wait_until_settled(|| std::future::ready(Ok(session.read())), subscription, deadline).await }
+        async move {
+            wait_until_settled(
+                || std::future::ready(Ok(session.read())),
+                subscription,
+                deadline,
+            )
+            .await
+        }
     });
     session.read_done.notified().await;
     signals.notify(AgentSessionId::TEST_B);
@@ -145,7 +152,14 @@ async fn a_question_wakes_the_waiter_with_the_pending_question() {
     let deadline = tokio::time::Instant::now() + DEFAULT_WAIT;
     let waiter = tokio::spawn({
         let session = session.clone();
-        async move { wait_until_settled(|| std::future::ready(Ok(session.read())), subscription, deadline).await }
+        async move {
+            wait_until_settled(
+                || std::future::ready(Ok(session.read())),
+                subscription,
+                deadline,
+            )
+            .await
+        }
     });
     session.read_done.notified().await;
     session.set(TurnState::Blocked, vec![ask_user_question()]);
