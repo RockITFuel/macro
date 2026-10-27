@@ -11,6 +11,8 @@ enforced by the ordinary backend APIs.
 - `src/macro.ts`: public exports and namespace registration.
 - `documents.createCanvas()` creates shared content before returning a Document handle;
   it requires no browser open or upload.
+- `Document.markdown()`/`setMarkdown()` read and replace a native markdown
+  document exactly; `content()` stays the any-format text read.
 - `src/entities/entity.ts`: lazy detail reads, mutation invalidation and safe JSON.
 - `src/entities/workspace/namespace.ts`: filtered activity pages and iteration.
 - `src/entities/routines/`, `agents/`, `harnesses/`: automation and agent hosts.
