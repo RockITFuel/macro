@@ -22,6 +22,9 @@ use super::local_env::Tunnels;
 use super::stage::Stage;
 use super::{Mode, arch, env_layer, frontend, mailpit, proxy, sdk_webhook, snapshot, summary};
 
+mod lifecycle;
+pub use lifecycle::{BackupArgs, StartArgs, backup, start};
+
 #[derive(Args, Clone, Default)]
 pub struct UpArgs {
     #[command(flatten)]
@@ -33,6 +36,11 @@ pub struct UpArgs {
     /// and the init snapshot only captures the infra volumes anyway.
     #[arg(long)]
     pub infra_only: bool,
+    /// Wipe a public instance's existing data and start over. Without it,
+    /// `up` refuses an instance that already has data volumes (see
+    /// `stack start`).
+    #[arg(long)]
+    pub fresh: bool,
     /// Print a machine-readable JSON summary as the final line.
     #[arg(long)]
     pub json: bool,
@@ -91,6 +99,22 @@ struct StackState {
     /// Host directory currently bind-mounted at `/app/out`.
     #[serde(default)]
     binaries_dir: Option<PathBuf>,
+    /// The `--port-base` it runs on, so later commands find it without the
+    /// flag (a named instance otherwise derives a different one).
+    #[serde(default)]
+    port_base: Option<u16>,
+}
+
+/// The instance `args` name, on the port base its recorded stack runs on
+/// unless `--port-base` says otherwise.
+fn recorded_instance(args: &InstanceArgs) -> Result<Instance> {
+    let instance = Instance::derive(args.instance.as_deref(), args.port_base)?;
+    match read_state(&instance).and_then(|state| state.port_base) {
+        Some(port_base) if args.port_base.is_none() && port_base != instance.port_base() => {
+            Instance::derive(args.instance.as_deref(), Some(port_base))
+        }
+        _ => Ok(instance),
+    }
 }
 
 fn state_path(instance: &Instance) -> PathBuf {
@@ -139,6 +163,17 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
         mode.label(),
         instance.name()
     ));
+    // Every `up` wipes the instance's volumes. On a public stack that is
+    // users' data, so only an explicit --fresh may do it.
+    if !stage.is_dry_run()
+        && env_layer::self_host_settings(args.run.env.env_file.as_deref())?.is_public()
+    {
+        lifecycle::refuse_wipe(
+            &instance,
+            &super::existing_data_volumes(&instance)?,
+            args.fresh,
+        )?;
+    }
     if !stage.is_dry_run() {
         clear_state(&instance)?;
     }
@@ -278,6 +313,7 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
                 mode: mode.label().to_string(),
                 frontend: if static_frontend { "static" } else { "none" }.to_string(),
                 binaries_dir: Some(active_binaries),
+                port_base: Some(instance.port_base()),
             },
         )?;
         super::build::BinariesDir::release_previous_gc_root(&instance.artifact_dir());
@@ -309,10 +345,20 @@ pub fn up(mode: Mode, args: &UpArgs) -> Result<Instance> {
 }
 
 /// `cargo x stack update` — adopt a new build into the running stack.
-/// Volumes stay. With no recorded stack, this bootstraps through [`up`].
+/// Volumes stay. With no recorded stack and no data, this bootstraps through
+/// [`up`]; with data but no record it refuses rather than wipe it.
 pub fn update(args: &UpdateArgs) -> Result<()> {
-    let instance = Instance::derive(args.instance.instance.as_deref(), args.instance.port_base)?;
+    let instance = recorded_instance(&args.instance)?;
     if read_state(&instance).is_none() {
+        let existing = super::existing_data_volumes(&instance)?;
+        if !existing.is_empty() {
+            bail!(
+                "instance {} has data ({}) but no recorded stack; `update` would have to \
+                 bring it up from scratch and wipe it. Use `stack start` to bring it back",
+                instance.name(),
+                existing.join(", ")
+            );
+        }
         return bootstrap_from_update(args);
     }
     update_running(args)
@@ -336,6 +382,7 @@ fn bootstrap_from_update(args: &UpdateArgs) -> Result<()> {
             with_cf_tunnel: false,
         },
         infra_only: false,
+        fresh: false,
         json: args.json,
     };
     up(Mode::Local, &up_args).map(|_| ())
@@ -343,7 +390,7 @@ fn bootstrap_from_update(args: &UpdateArgs) -> Result<()> {
 
 fn update_running(args: &UpdateArgs) -> Result<()> {
     let stage = Stage::from_env_cli(args.verbose);
-    let instance = Instance::derive(args.instance.instance.as_deref(), args.instance.port_base)?;
+    let instance = recorded_instance(&args.instance)?;
     let state = read_state(&instance).expect("update_running requires stack state");
     let mode = mode_from_label(&state.mode)?;
     stage.section(&format!(
@@ -363,6 +410,11 @@ fn update_running(args: &UpdateArgs) -> Result<()> {
         // running stack's wiring keyed on the port probe as before.
         true,
     )?;
+    // The new build may expect a newer schema: migrate before any service
+    // restarts on it.
+    if mode.spec().migrates_db {
+        super::db::migrate(&stage, &instance, &env.merged)?;
+    }
     let remounted = if let Some(source) = args.binaries_dir.as_deref() {
         let new = super::build::BinariesDir::classify(source)?;
         new.validate(&super::inventory::local_binaries())?;
@@ -448,6 +500,7 @@ fn remount(
             mode: state.mode.clone(),
             frontend: state.frontend.clone(),
             binaries_dir: Some(new.host_dir().to_path_buf()),
+            port_base: Some(instance.port_base()),
         },
     )?;
     super::build::BinariesDir::release_previous_gc_root(&instance.artifact_dir());
@@ -483,7 +536,7 @@ fn reload_static_frontend(
 /// `cargo x stack status` — container states + health through the proxy, as a
 /// human summary or `--json` for machines.
 pub fn status(args: &StatusArgs) -> Result<()> {
-    let instance = Instance::derive(args.instance.instance.as_deref(), args.instance.port_base)?;
+    let instance = recorded_instance(&args.instance)?;
     let state = read_state(&instance);
     let services = compose_ps(&instance)?;
     let running = services.iter().any(|s| s.state == "running");
@@ -543,7 +596,7 @@ pub fn status(args: &StatusArgs) -> Result<()> {
 /// `cargo x stack down` — reclaim the instance: containers, volumes, networks,
 /// and state. `--keep-data` only stops containers.
 pub fn down(args: &DownArgs) -> Result<()> {
-    let instance = Instance::derive(args.instance.instance.as_deref(), args.instance.port_base)?;
+    let instance = recorded_instance(&args.instance)?;
     if args.keep_data {
         return super::stop(&args.instance);
     }

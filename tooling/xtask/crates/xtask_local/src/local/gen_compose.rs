@@ -547,6 +547,17 @@ fn apply_self_host(value: &mut Value, self_host: &SelfHost) {
             }
         }
     }
+    // A public stack comes back by itself after a crash or a host reboot.
+    // The override names every service it runs except FusionAuth's database
+    // (only there when its password is overridden), so add that one.
+    if self_host.is_public() {
+        services
+            .entry(Value::from("db"))
+            .or_insert_with(|| Value::Mapping(serde_yaml::Mapping::new()));
+        for service in services.values_mut().filter_map(Value::as_mapping_mut) {
+            service.insert("restart".into(), "unless-stopped".into());
+        }
+    }
     // The base compose mounts the host's Docker socket into the harness for
     // local sandboxes; a public stack runs none, so keep only the binaries.
     if self_host.is_public()

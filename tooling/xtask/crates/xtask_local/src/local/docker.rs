@@ -67,6 +67,20 @@ pub fn ensure_volume(name: &str) -> Result<()> {
     })
 }
 
+/// Whether a volume by this name exists.
+pub fn volume_exists(name: &str) -> Result<bool> {
+    block_on(async {
+        let docker = connect()?;
+        match docker.inspect_volume(name).await {
+            Ok(_) => Ok(true),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => Ok(false),
+            Err(e) => Err(e).with_context(|| format!("inspecting volume {name}")),
+        }
+    })
+}
+
 fn already_exists(e: &bollard::errors::Error) -> bool {
     let s = e.to_string();
     s.contains("already exists") || s.contains("409")

@@ -786,7 +786,7 @@ fn recreate_aux_service_containers(
 
 /// How the local infra reaches its initialized state on bring-up.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum InfraInit {
+pub(super) enum InfraInit {
     /// Run the real init: migrate the DB, let FusionAuth apply its kickstart,
     /// create the OpenSearch indices.
     Full,
@@ -1166,6 +1166,18 @@ fn instance_volumes(instance: &Instance) -> [String; 6] {
         instance.volume_fusionauth_db(),
         instance.volume_fusionauth_config(),
     ]
+}
+
+/// The instance's volumes that already exist: an instance with any of these
+/// holds data that a full bring-up would wipe.
+pub(super) fn existing_data_volumes(instance: &Instance) -> Result<Vec<String>> {
+    let mut existing = Vec::new();
+    for volume in instance_volumes(instance) {
+        if docker::volume_exists(&volume)? {
+            existing.push(volume);
+        }
+    }
+    Ok(existing)
 }
 
 /// The instance's external Docker networks.

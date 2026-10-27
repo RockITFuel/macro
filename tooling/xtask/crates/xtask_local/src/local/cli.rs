@@ -74,6 +74,11 @@ pub enum StackCmd {
     /// Build the static frontend bundle `up` would serve for this env into
     /// `--out`, for a host without bun (`MACRO_FRONTEND_BUNDLE`).
     BuildFrontend(super::stack::BuildFrontendArgs),
+    /// Bring an existing instance back (after a reboot or `down --keep-data`)
+    /// without wiping its data.
+    Start(super::stack::StartArgs),
+    /// Dump the instance's Macro and FusionAuth databases to `--out`.
+    Backup(super::stack::BackupArgs),
 }
 
 #[derive(Args, Clone, Default)]
@@ -303,6 +308,8 @@ fn run(cli: Cli) -> Result<()> {
             StackCmd::Status(a) => super::stack::status(&a),
             StackCmd::Down(a) => super::stack::down(&a),
             StackCmd::BuildFrontend(a) => super::stack::build_frontend(&a),
+            StackCmd::Start(a) => super::stack::start(&a),
+            StackCmd::Backup(a) => super::stack::backup(&a),
         },
     }
 }

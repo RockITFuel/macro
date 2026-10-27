@@ -8,6 +8,7 @@ fn stack_state_roundtrips() {
         mode: "local".to_string(),
         frontend: "static".to_string(),
         binaries_dir: Some(PathBuf::from("/tmp/binaries")),
+        port_base: Some(41000),
     };
     let json = serde_json::to_string(&state).unwrap();
     let back: StackState = serde_json::from_str(&json).unwrap();
@@ -35,6 +36,7 @@ fn clearing_state_invalidates_a_previous_headless_stack() {
             mode: "local".to_string(),
             frontend: "static".to_string(),
             binaries_dir: None,
+            port_base: None,
         },
     )
     .unwrap();
@@ -43,4 +45,36 @@ fn clearing_state_invalidates_a_previous_headless_stack() {
     assert!(read_state(&instance).is_none());
     clear_state(&instance).unwrap();
     let _ = std::fs::remove_dir_all(instance.artifact_dir());
+}
+
+#[test]
+fn later_commands_find_the_recorded_port_base() {
+    let name = format!("port-base-{}", std::process::id());
+    let derived = Instance::derive(Some(&name), None).unwrap();
+    let recorded = derived.port_base() + 1000;
+    write_state(
+        &derived,
+        &StackState {
+            mode: "local".to_string(),
+            frontend: "static".to_string(),
+            binaries_dir: None,
+            port_base: Some(recorded),
+        },
+    )
+    .unwrap();
+    let args = InstanceArgs {
+        instance: Some(name.clone()),
+        port_base: None,
+    };
+    assert_eq!(recorded_instance(&args).unwrap().port_base(), recorded);
+    // An explicit --port-base still wins.
+    let explicit = InstanceArgs {
+        instance: Some(name),
+        port_base: Some(derived.port_base()),
+    };
+    assert_eq!(
+        recorded_instance(&explicit).unwrap().port_base(),
+        derived.port_base()
+    );
+    let _ = std::fs::remove_dir_all(derived.artifact_dir());
 }

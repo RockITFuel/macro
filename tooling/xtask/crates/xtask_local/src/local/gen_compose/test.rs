@@ -185,3 +185,37 @@ fn a_public_harness_gets_its_binaries_but_not_the_docker_socket() {
         serde_yaml::to_value(vec!["/srv/out:/app/out:ro"]).unwrap()
     );
 }
+
+#[test]
+fn a_public_stack_restarts_every_service_by_itself() {
+    let instance = Instance::derive(Some("restart-test"), None).unwrap();
+    let mut services = IndexMap::new();
+    add_local_infra(&mut services, &instance, true);
+    add_localstack_service(&mut services, &instance);
+    let compose = dct::Compose {
+        services: dct::Services(services),
+        ..Default::default()
+    };
+    let local = serde_yaml::to_value(&compose).unwrap();
+    let mut public = local.clone();
+    apply_self_host(
+        &mut public,
+        &SelfHost {
+            public_origin: Some("https://macro.example.com".into()),
+            ..SelfHost::default()
+        },
+    );
+
+    assert!(
+        local["services"]
+            .as_mapping()
+            .unwrap()
+            .values()
+            .all(|service| service.get("restart").is_none())
+    );
+    let services = public["services"].as_mapping().unwrap();
+    assert!(services.contains_key("db"));
+    for (name, service) in services {
+        assert_eq!(service["restart"], "unless-stopped", "{name:?}");
+    }
+}

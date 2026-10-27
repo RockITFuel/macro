@@ -61,16 +61,8 @@ pub fn resolve(
     // Read `--env-file` up front: the self-host settings in it (public origin,
     // passwords, internal keys) shape the typed env below, which has to agree
     // with them. It is still layered in at its usual precedence further down.
-    let mut file_env = BTreeMap::new();
-    if let Some(file) = env_file {
-        load_dotenv_into(file, &mut file_env)
-            .with_context(|| format!("loading --env-file {}", file.display()))?;
-    }
-    let self_host = SelfHost::from_lookup(|key| {
-        std::env::var(key)
-            .ok()
-            .or_else(|| file_env.get(key).cloned())
-    });
+    let file_env = read_env_file(env_file)?;
+    let self_host = self_host_from(&file_env);
     let local = spec
         .overlay_local_env
         .then(|| {
@@ -180,6 +172,36 @@ pub fn resolve(
         env_file: env_file.map(Path::to_path_buf),
         generated_path,
     })
+}
+
+/// The `--env-file` layer on its own (empty without one).
+fn read_env_file(env_file: Option<&Path>) -> Result<BTreeMap<String, String>> {
+    let mut file_env = BTreeMap::new();
+    if let Some(file) = env_file {
+        load_dotenv_into(file, &mut file_env)
+            .with_context(|| format!("loading --env-file {}", file.display()))?;
+    }
+    Ok(file_env)
+}
+
+/// The self-host settings with the precedence [`resolve`] gives them:
+/// process env over `--env-file`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "xtask is host tooling; it reads the host environment like `resolve`"
+)]
+fn self_host_from(file_env: &BTreeMap<String, String>) -> SelfHost {
+    SelfHost::from_lookup(|key| {
+        std::env::var(key)
+            .ok()
+            .or_else(|| file_env.get(key).cloned())
+    })
+}
+
+/// The self-host settings a run with this `--env-file` will have, without
+/// resolving the rest of its env (for decisions made before bring-up).
+pub fn self_host_settings(env_file: Option<&Path>) -> Result<SelfHost> {
+    Ok(self_host_from(&read_env_file(env_file)?))
 }
 
 fn should_overlay_process_env(key: &str, value: &str) -> bool {

@@ -103,6 +103,27 @@ HTTPS with the development CA, so skip verification) and the auth host, when
 used, to FusionAuth (`--port-base` + 5); see `Port` in
 `tooling/xtask/crates/xtask_local/src/local/instance.rs`.
 
+## Keeping data
+
+`stack up` wipes the instance's volumes. On a public stack it refuses while
+they hold data unless `--fresh` is passed. Day to day:
+
+```sh
+just stack start  --instance prod --no-doppler --env-file … # after a reboot or `down --keep-data`; keeps data
+just stack update --instance prod --no-doppler --env-file … --binaries-dir <new dir>  # migrates, then restarts on the new build
+just stack backup --instance prod --out /srv/macro-backups  # pg_dump of macrodb and fusionauth (0600 files)
+```
+
+Restore a dump with `docker exec -i macro-prod-postgres-1 pg_restore -U user
+--clean --if-exists -d macrodb < macrodb-<time>.dump` (FusionAuth: container
+`macro-prod-db-1`, role `postgres`, database `fusionauth`). `start` re-creates
+LocalStack's queues, tables and buckets, which do not survive a restart: S3
+objects and the KMS keys are lost with it until R2 and the local encryption
+key are in. `update` refuses an instance with data but no `stack.json` instead
+of bringing it up from scratch. Public stacks restart their containers by
+themselves (`unless-stopped`). Later commands reuse the `--port-base` recorded
+at `up`.
+
 ## Local development stack
 
 On luka-mini (no zig, so binaries come from `docker/Dockerfile.dev`):
