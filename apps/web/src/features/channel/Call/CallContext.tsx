@@ -7,7 +7,6 @@ import {
 } from '@core/media/background-effect';
 import { fireAndForget } from '@core/util/fireAndForget';
 import { holdAutomaticReload } from '@core/util/reloadForNewerBuild';
-import type { KrispNoiseFilter } from '@livekit/krisp-noise-filter';
 import type { BackgroundProcessorWrapper } from '@livekit/track-processors';
 import type { Span } from '@macro-inc/observability';
 import {
@@ -45,20 +44,21 @@ import { traceCallMedia } from './call-media-telemetry';
 import { publishCallResolution } from './call-resolution';
 import { createLatestAsyncRequestQueue } from './latest-async-request-queue';
 import {
-  getKrisp,
   getLivekit,
-  isKrispSupported,
+  getNoiseFilter,
+  isNoiseFilterSupported,
   LK_CONNECTION_STATE,
   LK_ROOM_EVENT,
   LK_TRACK_SOURCE,
-  loadKrisp,
   loadLivekit,
+  loadNoiseFilter,
 } from './livekit-loader';
 import { bindNativeCallLifecycle } from './native-call-lifecycle';
 import {
   type NativeCallConnectionState,
   useMaybeNativeCallState,
 } from './native-call-state';
+import type { RnnoiseNoiseFilterProcessor } from './rnnoise-noise-filter';
 import {
   isNativeCallEnabled,
   prepareNativeCallJoin,
@@ -96,7 +96,7 @@ type ImageBackgroundEffect = Extract<BackgroundEffect, { type: 'image' }>;
 export const BACKGROUND_IMAGES: (ImageBackgroundEffect & { label: string })[] =
   [];
 
-export type MicNoiseSuppressionMode = 'off' | 'browser' | 'krisp';
+export type MicNoiseSuppressionMode = 'off' | 'browser' | 'rnnoise';
 
 type NativeAudioProcessingConstraints = MediaTrackConstraints & {
   voiceIsolation?: ConstrainBoolean;
@@ -147,13 +147,13 @@ function normalizeNoiseSuppressionMode(
 ): MicNoiseSuppressionMode {
   if (value === false || value === 'false' || value === 'off') return 'off';
   if (value === 'browser') return 'browser';
-  return 'krisp';
+  return 'rnnoise';
 }
 
 function effectiveCaptureModeForPreferredMode(
   mode: MicNoiseSuppressionMode
 ): MicNoiseSuppressionMode {
-  if (mode === 'krisp' && !isKrispSupported()) return 'browser';
+  if (mode === 'rnnoise' && !isNoiseFilterSupported()) return 'browser';
   return mode;
 }
 
@@ -171,10 +171,10 @@ function microphoneCaptureOptions(
 
   return {
     // Browser AGC runs inside the capture pipeline (AEC → AGC → NS), i.e.
-    // upstream of any track processor — it feeds Krisp a healthy input level
+    // upstream of any track processor — it feeds RNNoise a healthy input level
     // and cannot re-amplify the filter's residue (that would need a gain
     // stage after the processor, which doesn't exist here). AGC-off left
-    // quiet mics at low SNR, and Krisp/browser NS then gated their speech.
+    // quiet mics at low SNR, and RNNoise/browser NS then gated their speech.
     ...(supportsNativeAudioProcessingConstraint('autoGainControl')
       ? { autoGainControl: true }
       : {}),
@@ -345,10 +345,10 @@ const [persistedBackgroundEffect, setPersistedBackgroundEffect] = makePersisted(
 
 // Persisted across reloads — users with hardware noise cancellation (e.g.
 // AirPods Pro, Bose) need to disable app/browser-side NS to avoid cascading
-// filters that attenuate voice. Defaults to Krisp to match existing behavior.
+// filters that attenuate voice. Defaults to the RNNoise filter.
 // The custom deserializer migrates the previous boolean format.
 const [persistedNoiseSuppressionMode, setPersistedNoiseSuppressionMode] =
-  makePersisted(createSignal<MicNoiseSuppressionMode>('krisp'), {
+  makePersisted(createSignal<MicNoiseSuppressionMode>('rnnoise'), {
     name: 'call.noiseSuppression',
     deserialize(data) {
       try {
@@ -415,9 +415,9 @@ export type CallState = {
   switchAudioOutput: (deviceId: string) => Promise<void>;
   /** Switch active video input device */
   switchVideoInput: (deviceId: string) => Promise<void>;
-  /** Active mic noise suppression mode: off, browser-native, or Krisp */
+  /** Active mic noise suppression mode: off, browser-native, or RNNoise */
   noiseSuppressionMode: () => MicNoiseSuppressionMode;
-  /** Whether mic noise suppression (Krisp or native fallback) is enabled */
+  /** Whether mic noise suppression (RNNoise or native fallback) is enabled */
   isNoiseSuppressed: () => boolean;
   /** Toggle mic noise suppression on/off */
   toggleNoiseSuppression: () => Promise<void>;
@@ -477,9 +477,8 @@ function createCallState() {
     backgroundEffect: persistedBackgroundEffect(),
     noiseSuppressionMode: persistedNoiseSuppressionMode(),
   });
-  const [krispFilter, setKrispFilter] = createSignal<ReturnType<
-    typeof KrispNoiseFilter
-  > | null>(null);
+  const [noiseFilter, setNoiseFilter] =
+    createSignal<RnnoiseNoiseFilterProcessor | null>(null);
   const [blurProcessor, setBlurProcessor] =
     createSignal<BackgroundProcessorWrapper | null>(null);
 
@@ -542,7 +541,7 @@ function createCallState() {
       event,
       preferredMode: persistedNoiseSuppressionMode(),
       activeMode: store.noiseSuppressionMode,
-      krispSupported: isKrispSupported(),
+      noiseFilterSupported: isNoiseFilterSupported(),
       hasMicTrack: !!micTrack,
       micReadyState: mediaStreamTrack?.readyState,
       hasProcessor: !!micTrack?.getProcessor(),
@@ -570,7 +569,7 @@ function createCallState() {
       callId: store.activeCallId ?? undefined,
       preferredMode: persistedNoiseSuppressionMode(),
       activeMode: store.noiseSuppressionMode,
-      krispSupported: isKrispSupported(),
+      noiseFilterSupported: isNoiseFilterSupported(),
       hasProcessor: !!micTrack?.getProcessor(),
       constraintMismatch,
       autoGainControl: settings?.autoGainControl,
@@ -587,7 +586,7 @@ function createCallState() {
 
   // Noise-suppression processor work can be reached concurrently (background
   // media setup, mute toggle, device switch, NS toggle). Overlapping runs can
-  // attach duplicate Krisp instances or land an attach after the user toggled
+  // attach duplicate RNNoise instances or land an attach after the user toggled
   // off, so it is serialized; each queued run re-reads the persisted mode,
   // which means the latest user intent wins regardless of arrival order.
   let micProcessingQueue: Promise<void> = Promise.resolve();
@@ -614,7 +613,7 @@ function createCallState() {
 
     if (preferredMode === 'off') {
       setStore('noiseSuppressionMode', 'off');
-      await detachKrispFromMicTrack(r);
+      await detachNoiseFilterFromMicTrack(r);
       if (room() !== r) return;
       await applyNativeAudioProcessingToMicTrack(r, 'off');
       if (room() !== r) return;
@@ -627,7 +626,7 @@ function createCallState() {
 
     if (preferredMode === 'browser') {
       setStore('noiseSuppressionMode', 'browser');
-      await detachKrispFromMicTrack(r);
+      await detachNoiseFilterFromMicTrack(r);
       if (room() !== r) return;
       await applyNativeAudioProcessingToMicTrack(r, 'browser');
       if (room() !== r) return;
@@ -637,84 +636,84 @@ function createCallState() {
       return;
     }
 
-    // Resolve Krisp before deciding whether the persisted preference can be
+    // Resolve RNNoise before deciding whether the persisted preference can be
     // honored. Import/load failures intentionally fall back to browser-native
     // processing instead of failing call setup.
-    await loadKrisp().catch(() => null);
+    await loadNoiseFilter().catch(() => null);
     if (room() !== r || !isLiveLocalTrack(micTrack)) return;
 
-    const krispModule = getKrisp();
-    if (!krispModule || !krispModule.isKrispNoiseFilterSupported()) {
+    const noiseFilterModule = getNoiseFilter();
+    if (
+      !noiseFilterModule ||
+      !noiseFilterModule.isRnnoiseNoiseFilterSupported()
+    ) {
       setStore('noiseSuppressionMode', 'browser');
-      await detachKrispFromMicTrack(r);
+      await detachNoiseFilterFromMicTrack(r);
       if (room() !== r) return;
       await applyNativeAudioProcessingToMicTrack(r, 'browser');
       if (room() !== r) return;
       logMicAudioProcessing('browser-noise-suppression-enabled', r, {
-        reason: 'krisp-unsupported',
+        reason: 'noise-filter-unsupported',
       });
       return;
     }
 
-    const existing = krispFilter();
+    const existing = noiseFilter();
     if (existing && micTrack.getProcessor() === existing) {
-      await applyNativeAudioProcessingToMicTrack(r, 'krisp');
+      await applyNativeAudioProcessingToMicTrack(r, 'rnnoise');
       if (room() !== r || !isLiveLocalTrack(micTrack)) return;
       await existing.setEnabled(true);
-      setStore('noiseSuppressionMode', 'krisp');
-      logMicAudioProcessing('krisp-noise-suppression-reused', r);
+      setStore('noiseSuppressionMode', 'rnnoise');
+      logMicAudioProcessing('rnnoise-noise-suppression-reused', r);
       return;
     }
 
-    // Krisp should be the only noise suppression layer. Disable native browser
+    // RNNoise should be the only noise suppression layer. Disable native browser
     // NS / voice isolation / AGC before attaching it to avoid cascaded filters.
-    await applyNativeAudioProcessingToMicTrack(r, 'krisp');
+    await applyNativeAudioProcessingToMicTrack(r, 'rnnoise');
     if (room() !== r || !isLiveLocalTrack(micTrack)) return;
 
     try {
-      await detachKrispFromMicTrack(r);
+      await detachNoiseFilterFromMicTrack(r);
       if (room() !== r || !isLiveLocalTrack(micTrack)) return;
 
-      // `quality` is model size/CPU cost, not suppression strength. The default
-      // medium model avoids the CPU pressure/dropouts that made voices sound
-      // muddy on busy machines while still enabling Krisp when supported.
-      const krisp = krispModule.KrispNoiseFilter({ quality: 'medium' });
-      setKrispFilter(krisp);
-      await micTrack.setProcessor(krisp);
+      const filter = noiseFilterModule.RnnoiseNoiseFilter();
+      setNoiseFilter(filter);
+      await micTrack.setProcessor(filter);
       if (room() !== r || !isLiveLocalTrack(micTrack)) {
         // The room/track went away mid-attach. Destroying a processor that
         // is still wired into the track's audio graph leaves a dead node in
         // the pipeline — detach it via stopProcessor() instead (which
         // destroys the processor internally).
-        if (micTrack.getProcessor() === krisp) {
+        if (micTrack.getProcessor() === filter) {
           await micTrack.stopProcessor();
         } else {
-          await krisp.destroy();
+          await filter.destroy();
         }
-        if (krispFilter() === krisp) setKrispFilter(null);
+        if (noiseFilter() === filter) setNoiseFilter(null);
         return;
       }
-      await krisp.setEnabled(true);
-      setStore('noiseSuppressionMode', 'krisp');
-      logMicAudioProcessing('krisp-noise-suppression-attached', r);
+      await filter.setEnabled(true);
+      setStore('noiseSuppressionMode', 'rnnoise');
+      logMicAudioProcessing('rnnoise-noise-suppression-attached', r);
     } catch (e) {
       if (room() !== r) return;
-      console.error('failed to re-attach Krisp noise filter', e);
-      // Fall back to a single browser-native layer if Krisp fails.
-      await detachKrispFromMicTrack(r);
+      console.error('failed to re-attach RNNoise noise filter', e);
+      // Fall back to a single browser-native layer if RNNoise fails.
+      await detachNoiseFilterFromMicTrack(r);
       if (room() !== r) return;
       setStore('noiseSuppressionMode', 'browser');
       await applyNativeAudioProcessingToMicTrack(r, 'browser');
       if (room() !== r) return;
       logMicAudioProcessing('browser-noise-suppression-fallback', r, {
-        reason: 'krisp-attach-failed',
+        reason: 'noise-filter-attach-failed',
       });
     }
   }
 
-  /** Stop + destroy the Krisp processor on the current mic track. */
-  async function detachKrispFromMicTrack(r: Room) {
-    const prev = krispFilter();
+  /** Stop + destroy the RNNoise processor on the current mic track. */
+  async function detachNoiseFilterFromMicTrack(r: Room) {
+    const prev = noiseFilter();
     if (!prev) return;
 
     try {
@@ -725,9 +724,9 @@ function createCallState() {
       } else {
         await prev.destroy();
       }
-      setKrispFilter(null);
+      setNoiseFilter(null);
     } catch (e) {
-      console.error('failed to detach Krisp noise filter', e);
+      console.error('failed to detach RNNoise noise filter', e);
     }
   }
 
@@ -838,12 +837,12 @@ function createCallState() {
   }
 
   function destroyRoomProcessors() {
-    const krisp = krispFilter();
-    if (krisp) {
-      krisp.destroy().catch((e) => {
-        console.error('failed to destroy Krisp noise filter', e);
+    const filter = noiseFilter();
+    if (filter) {
+      filter.destroy().catch((e) => {
+        console.error('failed to destroy RNNoise noise filter', e);
       });
-      setKrispFilter(null);
+      setNoiseFilter(null);
     }
     const blur = blurProcessor();
     if (blur) {
@@ -1291,7 +1290,7 @@ function createCallState() {
         console.error('failed to keep microphone muted', e);
       }
     } else {
-      // Attach Krisp when supported; otherwise use one browser-native layer.
+      // Attach RNNoise when supported; otherwise use one browser-native layer.
       // ensureNoiseSuppressionOnMicTrack is a no-op when the user's pref is off.
       await ensureNoiseSuppressionOnMicTrack(targetRoom);
     }
@@ -1325,7 +1324,7 @@ function createCallState() {
   }
 
   // Create the browser controller on first use. LiveKit gates signaling;
-  // Krisp deliberately does not, because its much larger chunk is optional
+  // RNNoise deliberately does not, because its much larger chunk is optional
   // media enhancement and finishLocalMediaSetup already runs in the background.
   let livekitJs: LivekitJsCallController | null = null;
   let livekitJsPromise: Promise<LivekitJsCallController> | null = null;
@@ -1573,7 +1572,7 @@ function createCallState() {
       store.noiseSuppressionMode
     )
       ? 'off'
-      : 'krisp';
+      : 'rnnoise';
 
     setStore('noiseSuppressionMode', newMode);
     setPersistedNoiseSuppressionMode(newMode);
@@ -1583,7 +1582,7 @@ function createCallState() {
 
     try {
       // Both directions run through the serialized ensure path: its 'off'
-      // branch detaches Krisp and clears native processing, and queueing
+      // branch detaches RNNoise and clears native processing, and queueing
       // means a toggle issued while an attach is in flight still converges
       // on the mode the user picked last.
       await ensureNoiseSuppressionOnMicTrack(r);

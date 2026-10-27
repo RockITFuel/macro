@@ -1,9 +1,9 @@
 /**
  * Lazy loaders for the browser call SDKs.
  *
- * CallProvider mounts with the app shell, but LiveKit and Krisp are only needed
+ * CallProvider mounts with the app shell, but LiveKit and the noise filter are only needed
  * once a browser call starts. Keeping all value imports in this module prevents
- * both SDKs (including Krisp's inlined model) from entering the initial bundle.
+ * both (including the RNNoise noise filter) from entering the initial bundle.
  */
 import type {
   ConnectionState,
@@ -13,12 +13,12 @@ import type {
 } from 'livekit-client';
 
 type LivekitModule = typeof import('livekit-client');
-type KrispModule = typeof import('@livekit/krisp-noise-filter');
+type NoiseFilterModule = typeof import('./rnnoise-noise-filter');
 
 let livekit: LivekitModule | null = null;
 let livekitPromise: Promise<LivekitModule> | null = null;
-let krisp: KrispModule | null = null;
-let krispPromise: Promise<KrispModule> | null = null;
+let noiseFilter: NoiseFilterModule | null = null;
+let noiseFilterPromise: Promise<NoiseFilterModule> | null = null;
 
 export function loadLivekit(): Promise<LivekitModule> {
   livekitPromise ??= import('livekit-client')
@@ -38,26 +38,26 @@ export function getLivekit(): LivekitModule | null {
   return livekit;
 }
 
-export function loadKrisp(): Promise<KrispModule> {
-  krispPromise ??= import('@livekit/krisp-noise-filter')
+export function loadNoiseFilter(): Promise<NoiseFilterModule> {
+  noiseFilterPromise ??= import('./rnnoise-noise-filter')
     .then((module) => {
-      krisp = module;
+      noiseFilter = module;
       return module;
     })
     .catch((error: unknown) => {
-      krispPromise = null;
+      noiseFilterPromise = null;
       throw error;
     });
-  return krispPromise;
+  return noiseFilterPromise;
 }
 
-export function getKrisp(): KrispModule | null {
-  return krisp;
+export function getNoiseFilter(): NoiseFilterModule | null {
+  return noiseFilter;
 }
 
-/** Returns false until Krisp has loaded or when the browser is unsupported. */
-export function isKrispSupported(): boolean {
-  return krisp?.isKrispNoiseFilterSupported() ?? false;
+/** Returns false until the noise filter has loaded or when unsupported. */
+export function isNoiseFilterSupported(): boolean {
+  return noiseFilter?.isRnnoiseNoiseFilterSupported() ?? false;
 }
 
 // Compile-time-checked mirrors let shell code compare SDK enum values without
