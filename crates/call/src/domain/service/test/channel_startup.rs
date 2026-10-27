@@ -152,6 +152,7 @@ async fn channel_token_does_not_wait_for_media_or_recipient_notifications() {
         region: "test".into(),
         access_key: "test".into(),
         secret: "test".into(),
+        endpoint: None,
     });
     configure_repository_clone(&service.repo, background_repo);
     let token = tokio::time::timeout(

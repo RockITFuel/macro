@@ -921,6 +921,15 @@ fn an_external_s3_endpoint_gets_prefixed_buckets_and_its_credentials() {
     assert_eq!(env["S3_ACCESS_KEY_ID"], "r2-key");
     assert_eq!(env["S3_SECRET_ACCESS_KEY"], "r2-secret");
     assert_eq!(env["S3_REGION"], "auto");
+    assert_eq!(
+        env["CALL_RECORDING_S3_BUCKET"],
+        "macro-macro-call-recording-local"
+    );
+    assert_eq!(
+        env["CALL_RECORDING_S3_ENDPOINT"],
+        "https://account.r2.cloudflarestorage.com"
+    );
+    assert_eq!(env["CALL_RECORDING_S3_ACCESS_KEY"], "r2-key");
     for bucket in resources::BUCKETS {
         assert_eq!(env[bucket.env_key], format!("macro-{}", bucket.name));
     }
@@ -936,6 +945,7 @@ fn an_external_s3_endpoint_gets_prefixed_buckets_and_its_credentials() {
     .unwrap()
     .to_env();
     assert!(!local.contains_key("S3_ENDPOINT"));
+    assert!(!local.contains_key("CALL_RECORDING_S3_BUCKET"));
     assert_eq!(
         local["DOCUMENT_STORAGE_BUCKET"],
         resources::DOC_STORAGE_BUCKET

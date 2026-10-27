@@ -69,10 +69,40 @@ fn room_composite_egress_uses_speaker_layout() {
             region: "us-east-1".to_owned(),
             access_key: "test-access-key".to_owned(),
             secret: "test-secret".to_owned(),
+            endpoint: None,
         },
     );
 
     assert_eq!(request.options.layout, "speaker");
+}
+
+#[test]
+fn room_composite_egress_uploads_to_an_s3_compatible_endpoint() {
+    let upload = |endpoint: Option<&str>| {
+        let request = build_room_composite_egress_request(
+            "room-1",
+            &EgressS3Config {
+                bucket: "macro-call-recording".to_owned(),
+                region: "auto".to_owned(),
+                access_key: "key".to_owned(),
+                secret: "secret".to_owned(),
+                endpoint: endpoint.map(str::to_owned),
+            },
+        );
+        let Some(EgressOutput::File(file)) = request.outputs.into_iter().next() else {
+            panic!("a file output");
+        };
+        let Some(encoded_file_output::Output::S3(s3)) = file.output else {
+            panic!("an S3 upload");
+        };
+        s3
+    };
+    let aws = upload(None);
+    assert_eq!(aws.endpoint, "");
+    assert!(!aws.force_path_style);
+    let r2 = upload(Some("https://account.r2.cloudflarestorage.com"));
+    assert_eq!(r2.endpoint, "https://account.r2.cloudflarestorage.com");
+    assert!(r2.force_path_style);
 }
 
 #[tokio::test]

@@ -531,6 +531,7 @@ fn build_get_or_create_service<B: MacroEventBroker + Clone, Cn: ConnectionServic
             region: "us-east-1".to_string(),
             access_key: "access-key".to_string(),
             secret: "secret".to_string(),
+            endpoint: None,
         })
     } else {
         service

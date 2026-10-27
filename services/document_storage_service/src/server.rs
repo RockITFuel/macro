@@ -776,6 +776,9 @@ pub async fn run() -> anyhow::Result<()> {
                 region: region.as_ref().to_string(),
                 access_key: access_key.as_ref().to_string(),
                 secret: secret.as_ref().to_string(),
+                endpoint: config::CallRecordingS3Endpoint::new()
+                    .map(|endpoint| endpoint.as_ref().to_string())
+                    .filter(|endpoint| !endpoint.trim().is_empty()),
             })
         }
         _ => None,

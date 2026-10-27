@@ -101,6 +101,8 @@ fn build_room_composite_egress_request(
             region: s3_config.region.clone(),
             access_key: s3_config.access_key.clone(),
             secret: s3_config.secret.clone(),
+            endpoint: s3_config.endpoint.clone().unwrap_or_default(),
+            force_path_style: s3_config.endpoint.is_some(),
             ..Default::default()
         })),
         ..Default::default()

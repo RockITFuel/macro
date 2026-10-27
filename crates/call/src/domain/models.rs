@@ -214,6 +214,9 @@ pub struct EgressS3Config {
     pub access_key: String,
     /// AWS secret access key.
     pub secret: String,
+    /// An S3-compatible endpoint (Cloudflare R2) instead of AWS S3; uploads
+    /// then use path-style addressing.
+    pub endpoint: Option<String>,
 }
 
 impl fmt::Debug for EgressS3Config {
@@ -223,6 +226,7 @@ impl fmt::Debug for EgressS3Config {
             .field("region", &self.region)
             .field("access_key", &"<redacted>")
             .field("secret", &"<redacted>")
+            .field("endpoint", &self.endpoint)
             .finish()
     }
 }

@@ -463,13 +463,33 @@ impl StorageEnv {
             ] {
                 env.insert(key.into(), value.clone().unwrap_or_default());
             }
+            let region = self
+                .self_host
+                .s3_region
+                .clone()
+                .unwrap_or_else(|| "auto".into());
+            env.insert("S3_REGION".into(), region.clone());
+            // Call recordings: LiveKit Egress uploads them itself, with the
+            // credentials and endpoint the document storage service hands it.
             env.insert(
-                "S3_REGION".into(),
+                "CALL_RECORDING_S3_BUCKET".into(),
                 self.self_host
-                    .s3_region
-                    .clone()
-                    .unwrap_or_else(|| "auto".into()),
+                    .bucket_name(resources::bucket_name("CALL_RECORDING_BUCKET_NAME")),
             );
+            env.insert("CALL_RECORDING_S3_REGION".into(), region);
+            env.insert("CALL_RECORDING_S3_ENDPOINT".into(), endpoint.clone());
+            for (key, value) in [
+                (
+                    "CALL_RECORDING_S3_ACCESS_KEY",
+                    &self.self_host.s3_access_key_id,
+                ),
+                (
+                    "CALL_RECORDING_S3_SECRET",
+                    &self.self_host.s3_secret_access_key,
+                ),
+            ] {
+                env.insert(key.into(), value.clone().unwrap_or_default());
+            }
         }
         for table in resources::TABLES {
             env.insert(table.env_key.into(), table.name.into());
