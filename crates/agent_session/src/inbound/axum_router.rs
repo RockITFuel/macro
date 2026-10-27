@@ -70,6 +70,9 @@ pub mod sharing;
 /// Routes associating pull requests with sessions.
 pub mod pull_requests;
 
+/// Long-poll for a session's current turn to settle.
+pub mod wait;
+
 mod owned_purge;
 
 /// Shared state for the agent session router: the agent session service plus

@@ -20,6 +20,12 @@ use agent_harness::inbound::tool_approvals::{
 };
 use agent_runtime_protocol::domain::action::{AgentAction, AgentActionId, PromptAttachment};
 use agent_session::domain::model::{SandboxSize, SessionBot};
+use agent_session::domain::read::{
+    SessionConversation, SessionConversationMessage, SessionMessageRole,
+};
+use agent_session::domain::wait::{
+    PendingRequest, PendingRequestKind, SessionWait, SessionWaitStatus,
+};
 use agent_session::domain::pull_request_links::{
     PullRequestLinkSource, PullRequestLinkedSession, PullRequestSessions, SessionPullRequestLink,
 };
@@ -79,6 +85,7 @@ impl Modify for SecurityAddon {
         axum_router::pull_requests::sessions_for_pull_requests,
         axum_router::get_agent_session_log_handler,
         axum_router::get_agent_session_folded_log_handler,
+        axum_router::wait::wait_agent_session_handler,
         axum_router::control_agent_session_handler,
         axum_router::get_agent_session_queue_handler,
         axum_router::edit_queued_action_handler,
@@ -136,6 +143,13 @@ impl Modify for SecurityAddon {
         SessionStatusDto,
         AgentSessionLogResponse,
         AgentSessionFoldedLogResponse,
+        SessionWait,
+        SessionWaitStatus,
+        PendingRequest,
+        PendingRequestKind,
+        SessionConversation,
+        SessionConversationMessage,
+        SessionMessageRole,
         AgentSessionLogEntryDto,
         SessionBot,
         LogFrameDto,

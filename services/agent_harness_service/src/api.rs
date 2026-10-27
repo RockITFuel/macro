@@ -75,6 +75,7 @@ pub struct ApiStates<T, R, Opener, Bots, Requests, Access, Auth, Models, Changes
     scheduling: Router,
     preview: Router,
     sharing: Router,
+    session_wait: Router,
     routine_sessions: Router,
     coding_agents: Router,
     capabilities: Router,
@@ -113,6 +114,7 @@ impl<T, R, Opener, Bots, Requests, Access, Auth, Models, Changes>
             scheduling: Router::new(),
             preview: Router::new(),
             sharing: Router::new(),
+            session_wait: Router::new(),
             routine_sessions: Router::new(),
             coding_agents: Router::new(),
             capabilities: Router::new(),
@@ -195,6 +197,12 @@ impl<T, R, Opener, Bots, Requests, Access, Auth, Models, Changes>
     /// Attach session-sharing routes with their independent domain service.
     pub fn with_sharing(mut self, router: Router) -> Self {
         self.sharing = router;
+        self
+    }
+
+    /// Attach the long-poll for a session's current turn.
+    pub fn with_session_wait(mut self, router: Router) -> Self {
+        self.session_wait = router;
         self
     }
 
@@ -331,6 +339,7 @@ where
         .merge(agent_session_control_router(states.control))
         .merge(agent_session_create_router(states.create))
         .merge(states.sharing)
+        .merge(states.session_wait)
         .merge(states.pull_requests)
         .merge(states.tool_approvals)
         .merge(states.app_connections)
