@@ -3,6 +3,7 @@ import { parseDocument } from 'yaml';
 import { z } from 'zod';
 import {
   FLOW_LIMITS,
+  FLOW_TOO_LARGE,
   type FlowDirection,
   type FlowEdge,
   type FlowGraph,
@@ -214,6 +215,13 @@ export function parseFlow(source: string): Result<FlowGraph, FlowParseError> {
   for (const group of groups.values()) {
     if (group.parent && !groups.has(group.parent)) group.parent = undefined;
   }
+  if (
+    nodes.size > FLOW_LIMITS.nodes ||
+    edges.length > FLOW_LIMITS.edges ||
+    groups.size > FLOW_LIMITS.groups
+  ) {
+    return err(FLOW_TOO_LARGE);
+  }
   const clash = [...nodes.keys()].find((nodeId) => groups.has(nodeId));
   if (clash) {
     return err({
@@ -230,12 +238,6 @@ export function parseFlow(source: string): Result<FlowGraph, FlowParseError> {
     });
   }
 
-  if (nodes.size > FLOW_LIMITS.nodes || edges.length > FLOW_LIMITS.edges) {
-    return err({
-      kind: 'too-large',
-      message: `Flowcharts are limited to ${FLOW_LIMITS.nodes} nodes and ${FLOW_LIMITS.edges} edges.`,
-    });
-  }
   if (nodes.size === 0) return err({ kind: 'empty' });
 
   const classDefs: Record<string, FlowStyle> = {};

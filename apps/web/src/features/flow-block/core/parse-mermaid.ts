@@ -1,6 +1,7 @@
 import { err, ok, type Result } from 'neverthrow';
 import {
   FLOW_LIMITS,
+  FLOW_TOO_LARGE,
   type FlowDirection,
   type FlowEdge,
   type FlowGraph,
@@ -44,18 +45,24 @@ export function parseMermaid(
   const groupStack: string[] = [];
 
   for (const statement of body) {
+    if (statement.text.length > FLOW_LIMITS.statementLength) {
+      return err({
+        kind: 'syntax',
+        line: statement.line,
+        message: `Lines are limited to ${FLOW_LIMITS.statementLength} characters.`,
+      });
+    }
     const result = parseStatement(statement.text, builder, groupStack);
+    if (result === TOO_LARGE) return err(FLOW_TOO_LARGE);
     if (result !== null) {
       return err({ kind: 'syntax', line: statement.line, message: result });
     }
     if (
       builder.nodes.size > FLOW_LIMITS.nodes ||
-      builder.edges.length > FLOW_LIMITS.edges
+      builder.edges.length > FLOW_LIMITS.edges ||
+      builder.groups.size > FLOW_LIMITS.groups
     ) {
-      return err({
-        kind: 'too-large',
-        message: `Flowcharts are limited to ${FLOW_LIMITS.nodes} nodes and ${FLOW_LIMITS.edges} edges.`,
-      });
+      return err(FLOW_TOO_LARGE);
     }
   }
   if (groupStack.length > 0) {
@@ -70,6 +77,9 @@ export function parseMermaid(
 }
 
 type Statement = { text: string; line: number };
+
+/** Returned by a statement that would grow the chart past `FLOW_LIMITS`. */
+const TOO_LARGE = Symbol('too large');
 
 /** Lines, split again on `;` outside quotes and brackets, without `%%` comments. */
 function splitStatements(source: string): Statement[] {
@@ -162,7 +172,7 @@ function parseStatement(
   text: string,
   builder: GraphBuilder,
   groupStack: string[]
-): string | null {
+): string | typeof TOO_LARGE | null {
   const currentGroup = groupStack[groupStack.length - 1];
 
   if (/^end$/i.test(text)) {
@@ -175,6 +185,15 @@ function parseStatement(
   if (subgraph) {
     const group = parseSubgraphTitle(subgraph[1], builder.groups.size);
     if (!group) return 'A subgraph needs an id or a title.';
+    for (
+      let ancestor: string | undefined = currentGroup;
+      ancestor !== undefined;
+      ancestor = builder.groups.get(ancestor)?.parent
+    ) {
+      if (ancestor === group.id) {
+        return `Subgraph "${group.id}" cannot contain itself.`;
+      }
+    }
     builder.groups.set(group.id, { ...group, parent: currentGroup });
     groupStack.push(group.id);
     return null;
@@ -260,7 +279,7 @@ function parseChain(
   text: string,
   builder: GraphBuilder,
   group: string | undefined
-): string | null {
+): string | typeof TOO_LARGE | null {
   const cursor = new Cursor(text);
   let previous = parseNodeGroup(cursor, builder, group);
   if (typeof previous === 'string') return previous;
@@ -271,6 +290,13 @@ function parseChain(
     cursor.skipSpace();
     const next = parseNodeGroup(cursor, builder, group);
     if (typeof next === 'string') return next;
+    // `a & b & … --> c & d & …` connects every pair; refuse before building them.
+    if (
+      builder.edges.length + previous.length * next.length >
+      FLOW_LIMITS.edges
+    ) {
+      return TOO_LARGE;
+    }
     for (const source of previous) {
       for (const target of next) {
         builder.edges.push({

@@ -182,6 +182,12 @@ describe('parseMermaid', () => {
     ['graph TD\nend', 2, /without a matching/],
     ['graph TD\nA ~~ B', 2, /Expected an arrow/],
     ['graph TD\nA@{ shape: rect }', 2, /not supported/],
+    [
+      'graph TD\nsubgraph B\nsubgraph A\nsubgraph B\nx --> y\nend\nend\nend',
+      4,
+      /cannot contain itself/,
+    ],
+    [`graph TD\nA -- a${' '.repeat(3000)}b`, 2, /limited to 2000 characters/],
   ])('reports %j at its line', (source, line, message) => {
     const result = error(source);
     expect(result).toMatchObject({ kind: 'syntax', line });
@@ -191,5 +197,12 @@ describe('parseMermaid', () => {
   it('refuses charts beyond the size limit', () => {
     const lines = Array.from({ length: 400 }, (_, i) => `n${i} --> n${i + 1}`);
     expect(error(`graph TD\n${lines.join('\n')}`).kind).toBe('too-large');
+  });
+
+  it('refuses more subgraphs than the limit', () => {
+    const open = Array.from({ length: 150 }, (_, i) => `subgraph g${i}`);
+    const close = Array.from({ length: 150 }, () => 'end');
+    const source = ['graph TD', ...open, 'x --> y', ...close].join('\n');
+    expect(error(source).kind).toBe('too-large');
   });
 });

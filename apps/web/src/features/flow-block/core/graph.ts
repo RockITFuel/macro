@@ -65,8 +65,21 @@ export type FlowParseError =
   | { kind: 'syntax'; line: number; message: string }
   | { kind: 'too-large'; message: string };
 
-/** Beyond this a chart is unreadable in a document and layout gets slow. */
-export const FLOW_LIMITS = { nodes: 300, edges: 600 } as const;
+/**
+ * Beyond this a chart is unreadable in a document and layout gets slow. The
+ * statement length bounds the parser's own work on a single line.
+ */
+export const FLOW_LIMITS = {
+  nodes: 300,
+  edges: 600,
+  groups: 100,
+  statementLength: 2000,
+} as const;
+
+export const FLOW_TOO_LARGE: FlowParseError = {
+  kind: 'too-large',
+  message: `Flowcharts are limited to ${FLOW_LIMITS.nodes} nodes, ${FLOW_LIMITS.edges} edges and ${FLOW_LIMITS.groups} subgraphs.`,
+};
 
 const COLOR =
   /^(#[0-9a-f]{3,8}|[a-z]{3,20}|(rgb|rgba|hsl|hsla|oklch)\([0-9.,%\s/-]+\))$/i;
