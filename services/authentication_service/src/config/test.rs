@@ -458,3 +458,23 @@ fn cursor_kms_key_required_when_both_absent() {
     let error = resolve_cursor_api_key_kms_key_id(&configured, None).unwrap_err();
     assert!(error.to_string().contains("CURSOR_API_KEY_KMS_KEY_ID"));
 }
+
+#[test]
+fn signup_allowed_domains_restrict_signups_in_every_environment() {
+    for environment in ["local", "production", "develop"] {
+        let mut values = config_values();
+        values["ENVIRONMENT"] = serde_json::json!(environment);
+        values["SIGNUP_ALLOWED_DOMAINS"] = serde_json::json!("allowed.test,second.test");
+        let config: Config = serde_json::from_value(values).unwrap();
+        let policy = config.signup_policy().unwrap();
+
+        policy
+            .authorize_public_email("new.user@second.test")
+            .expect("listed domain should be allowed");
+        assert_eq!(
+            policy.authorize_public_email(UNLISTED_PUBLIC_EMAIL),
+            Err(SignupPolicyDenial::PublicEmailNotAllowed),
+            "{environment}"
+        );
+    }
+}

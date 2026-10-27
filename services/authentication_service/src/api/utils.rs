@@ -7,9 +7,26 @@ use macro_env_var::maybe_env_vars;
 use rand::{Rng, seq::SliceRandom};
 use url::Url;
 
+#[cfg(test)]
+mod test;
+
 maybe_env_vars! {
     struct FrontendPort;
     struct FrontendOrigin;
+    /// Local only: `Lax` or `Strict` replaces the session cookies' `None`.
+    /// A self-hosted instance serves the app from the auth service's origin
+    /// and has no cross-site caller to allow.
+    struct CookieSameSite;
+}
+
+/// Local only: the configured app origin (`FRONTEND_ORIGIN`). A self-hosted
+/// instance's public origin is not one of the fixed hosts, so login flows
+/// accept return URLs on it too.
+pub(crate) fn local_frontend_origin() -> Option<Url> {
+    match Environment::new_or_prod() {
+        Environment::Local => FrontendOrigin::new()?.value()?.parse().ok(),
+        Environment::Develop | Environment::Production => None,
+    }
 }
 
 /// Generates a random 25 character session code
@@ -76,7 +93,18 @@ fn domain<'a>() -> Option<&'a str> {
 fn same_site() -> SameSite {
     match Environment::new_or_prod() {
         Environment::Production => SameSite::Strict,
-        Environment::Local | Environment::Develop => SameSite::None,
+        Environment::Local => {
+            local_same_site(CookieSameSite::new().as_ref().and_then(|v| v.value()))
+        }
+        Environment::Develop => SameSite::None,
+    }
+}
+
+fn local_same_site(configured: Option<&str>) -> SameSite {
+    match configured.map(str::trim) {
+        Some(value) if value.eq_ignore_ascii_case("lax") => SameSite::Lax,
+        Some(value) if value.eq_ignore_ascii_case("strict") => SameSite::Strict,
+        _ => SameSite::None,
     }
 }
 

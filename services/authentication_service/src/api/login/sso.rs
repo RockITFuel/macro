@@ -36,6 +36,14 @@ pub(crate) struct LoginQueryParams {
 }
 
 pub(crate) fn is_allowed_original_url(url: &Url) -> bool {
+    is_allowed_original_url_with(url, crate::api::utils::local_frontend_origin().as_ref())
+}
+
+/// [`is_allowed_original_url`], also admitting URLs on `frontend_origin`.
+fn is_allowed_original_url_with(url: &Url, frontend_origin: Option<&Url>) -> bool {
+    if frontend_origin.is_some_and(|origin| origin.origin() == url.origin()) {
+        return true;
+    }
     match url.scheme() {
         // The app owns the custom scheme and handles all macro URI routes itself.
         "macro" => true,

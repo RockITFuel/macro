@@ -70,6 +70,8 @@ maybe_env_vars! {
     pub struct LoopsApiKey;
     /// JSON array of exact email addresses allowed to sign up in Develop.
     pub struct DevelopmentSignupAllowlistJson;
+    /// Comma-separated email domains allowed to sign up, in any environment.
+    pub struct SignupAllowedDomains;
     /// Stripe promotion code GTM invite links grant at checkout. Defaults to `1MF`.
     pub struct GtmInvitePromoCode;
     /// Hours a GTM invite link stays openable after creation. Defaults to 48.
@@ -190,6 +192,10 @@ pub struct Config {
     ///
     /// All `@macro.com` email addresses are allowed by the Develop policy automatically.
     pub development_signup_allowlist_json: DevelopmentSignupAllowlistJson,
+    /// Comma-separated email domains allowed to sign up (optional). When set
+    /// it replaces the environment's policy: only these domains may create an
+    /// account, by any sign-in method. Existing users are unaffected.
+    pub signup_allowed_domains: SignupAllowedDomains,
     /// Whether Develop allows every public signup without reading
     /// `DEVELOPMENT_SIGNUP_ALLOWLIST_JSON`. Production and Local ignore it.
     #[macro_config_default(false)]
@@ -317,6 +323,10 @@ impl Config {
         &self,
         environment: Environment,
     ) -> anyhow::Result<SignupPolicy> {
+        if let Some(domains) = nonblank_value(self.signup_allowed_domains.value()) {
+            return SignupPolicy::from_domain_list(domains)
+                .context("SIGNUP_ALLOWED_DOMAINS is invalid");
+        }
         // Temporarily open Develop signups even when Doppler disables the bypass.
         // Remove this override to restore the configured allowlist policy.
         let bypass_allowlist =

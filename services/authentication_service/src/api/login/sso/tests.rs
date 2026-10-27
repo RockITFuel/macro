@@ -217,3 +217,22 @@ async fn it_works_with_double_encoded_scheme() {
         assert_eq!(original_url.0.as_str(), "https://example.com/");
     });
 }
+
+#[test]
+fn the_configured_frontend_origin_is_accepted_and_nothing_else_on_its_host() {
+    let origin = Url::parse("https://macro.example.test").unwrap();
+    let allowed = Url::parse("https://macro.example.test/app/login").unwrap();
+    assert!(!is_allowed_original_url_with(&allowed, None));
+    assert!(is_allowed_original_url_with(&allowed, Some(&origin)));
+    for rejected in [
+        "http://macro.example.test/app/login",
+        "https://macro.example.test:8443/app/login",
+        "https://evil.macro.example.test/app/login",
+    ] {
+        let rejected = Url::parse(rejected).unwrap();
+        assert!(
+            !is_allowed_original_url_with(&rejected, Some(&origin)),
+            "{rejected}"
+        );
+    }
+}

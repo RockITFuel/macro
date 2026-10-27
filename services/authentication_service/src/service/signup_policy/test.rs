@@ -172,3 +172,36 @@ fn config_errors_do_not_reveal_entries() {
     assert!(!debug.contains("not-an-email"));
     assert!(!display.contains("not-an-email"));
 }
+
+#[test]
+fn domain_allowlist_admits_only_listed_domains() {
+    let policy =
+        SignupPolicy::from_domain_list(" Example.Test, @second.test ,").expect("valid domains");
+
+    for email in ["new.user@example.test", " Other@SECOND.test "] {
+        assert_eq!(policy.authorize_public_email(email), Ok(()), "{email}");
+    }
+    for email in [
+        "user@macro.com",
+        "user@sub.example.test",
+        "user@example.test.evil.test",
+    ] {
+        assert_eq!(
+            policy.authorize_public_email(email),
+            Err(SignupPolicyDenial::PublicEmailNotAllowed),
+            "{email}"
+        );
+    }
+}
+
+#[test]
+fn domain_allowlist_rejects_empty_and_invalid_lists() {
+    assert_eq!(
+        SignupPolicy::from_domain_list(" , "),
+        Err(SignupPolicyConfigError::EmptyAllowlist)
+    );
+    assert_eq!(
+        SignupPolicy::from_domain_list("example.test, not a domain"),
+        Err(SignupPolicyConfigError::InvalidDomain { index: 1 })
+    );
+}

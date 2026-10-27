@@ -165,6 +165,13 @@ where
     F: FnOnce(FusionAuthUserWebhook) -> Fut,
     Fut: Future<Output = anyhow::Result<()>>,
 {
+    // An identity provider can hand over an account without an address (a
+    // GitHub user with a private email); Macro accounts are keyed by email,
+    // so refuse it here rather than create a user nothing can address.
+    if req.event.user.email.trim().is_empty() {
+        tracing::warn!("rejected user.create: the identity has no email address");
+        return Err(UserCreateWebhookError::Forbidden);
+    }
     signup_policy
         .authorize_public_email(&req.event.user.email)
         .map_err(|denial| {

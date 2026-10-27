@@ -268,11 +268,12 @@ pub async fn run() -> anyhow::Result<()> {
     let stripe_client = stripe::Client::new(stripe_client_secret);
     tracing::trace!("initialized stripe client");
 
-    // `from_env` routes to local SMTP (Mailpit) when SMTP_HOST is set, else SES.
+    // `from_env` routes to SMTP (Mailpit, or a real server) when SMTP_HOST is set, else SES.
     let ses_client = ses_client::Ses::from_env(
         aws_sdk_sesv2::Client::new(&aws_config),
         &config.environment.to_string(),
-    );
+    )
+    .context("invalid SMTP configuration")?;
 
     let jwt_args =
         JwtValidationArgs::new_with_secret_manager(config.environment, &secretsmanager_client)

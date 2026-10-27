@@ -15,6 +15,9 @@ pub enum SignupPolicy {
     AllowAll,
     /// Admit public signups when their normalized email is a Macro address or present.
     EmailAllowlist { allowed_emails: HashSet<String> },
+    /// Admit public signups whose email domain is listed (self-hosted
+    /// instances). Macro addresses get no exception.
+    DomainAllowlist { allowed_domains: HashSet<String> },
 }
 
 impl SignupPolicy {
@@ -46,6 +49,28 @@ impl SignupPolicy {
         Ok(Self::EmailAllowlist { allowed_emails })
     }
 
+    /// Create a domain allowlist from a comma-separated list such as
+    /// `example.com, example.org`.
+    pub fn from_domain_list(raw: &str) -> Result<Self, SignupPolicyConfigError> {
+        let allowed_domains = raw
+            .split(',')
+            .map(|domain| domain.trim().trim_start_matches('@').to_lowercase())
+            .filter(|domain| !domain.is_empty())
+            .enumerate()
+            .map(|(index, domain)| {
+                Email::parse_from_str(&format!("user@{domain}"))
+                    .map(|_| domain)
+                    .map_err(|_| SignupPolicyConfigError::InvalidDomain { index })
+            })
+            .collect::<Result<HashSet<_>, _>>()?;
+
+        if allowed_domains.is_empty() {
+            return Err(SignupPolicyConfigError::EmptyAllowlist);
+        }
+
+        Ok(Self::DomainAllowlist { allowed_domains })
+    }
+
     /// Authorize a public signup email address.
     pub fn authorize_public_email(&self, email: &str) -> Result<(), SignupPolicyDenial> {
         match self {
@@ -58,13 +83,24 @@ impl SignupPolicy {
                     Err(SignupPolicyDenial::PublicEmailNotAllowed)
                 }
             }
+            Self::DomainAllowlist { allowed_domains } => {
+                let normalized_email = normalize_public_email(email)?;
+                if normalized_email
+                    .rsplit_once('@')
+                    .is_some_and(|(_, domain)| allowed_domains.contains(domain))
+                {
+                    Ok(())
+                } else {
+                    Err(SignupPolicyDenial::PublicEmailNotAllowed)
+                }
+            }
         }
     }
 
     /// Return the number of configured addresses for allowlist policies.
     pub fn allowed_email_count(&self) -> Option<usize> {
         match self {
-            Self::AllowAll => None,
+            Self::AllowAll | Self::DomainAllowlist { .. } => None,
             Self::EmailAllowlist { allowed_emails } => Some(allowed_emails.len()),
         }
     }
@@ -77,6 +113,10 @@ impl fmt::Debug for SignupPolicy {
             Self::EmailAllowlist { allowed_emails } => formatter
                 .debug_struct("SignupPolicy::EmailAllowlist")
                 .field("allowed_email_count", &allowed_emails.len())
+                .finish(),
+            Self::DomainAllowlist { allowed_domains } => formatter
+                .debug_struct("SignupPolicy::DomainAllowlist")
+                .field("allowed_domain_count", &allowed_domains.len())
                 .finish(),
         }
     }
@@ -109,8 +149,14 @@ pub enum SignupPolicyConfigError {
         /// The zero-based array index of the invalid entry.
         index: usize,
     },
-    /// The allowlist did not contain any usable email addresses.
-    #[error("signup allowlist must contain at least one email address")]
+    /// A domain list entry was not a valid email domain.
+    #[error("signup domain entry at index {index} must be a valid email domain")]
+    InvalidDomain {
+        /// The zero-based index of the invalid entry.
+        index: usize,
+    },
+    /// The allowlist did not contain any usable email addresses or domains.
+    #[error("signup allowlist must contain at least one email address or domain")]
     EmptyAllowlist,
 }
 

@@ -207,3 +207,28 @@ fn identity_provider_name_keeps_partial_name() {
         (Some("Evan".to_string()), None)
     );
 }
+
+#[tokio::test]
+async fn a_signup_without_email_is_refused_even_when_signups_are_open() {
+    let req = user_create_webhook("", None);
+
+    let (is_ok, invocation_count) =
+        dispatch_with_invocation_count(&SignupPolicy::allow_all(), req).await;
+
+    assert!(!is_ok);
+    assert_eq!(invocation_count, 0);
+}
+
+#[tokio::test]
+async fn a_domain_allowlist_gates_every_identity_provider() {
+    let policy = SignupPolicy::from_domain_list("allowed.test").unwrap();
+
+    let (is_ok, _) =
+        dispatch_with_invocation_count(&policy, user_create_webhook("new@allowed.test", None))
+            .await;
+    assert!(is_ok);
+    let (is_ok, invocation_count) =
+        dispatch_with_invocation_count(&policy, user_create_webhook("new@other.test", None)).await;
+    assert!(!is_ok);
+    assert_eq!(invocation_count, 0);
+}
