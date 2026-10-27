@@ -25,7 +25,7 @@ workers for our own machines. Read [LOCAL_STT.md](LOCAL_STT.md) first.
 ## Checks
 
 - `python -m unittest discover -s tests -t . && python -m unittest test_transcriber`
-  (needs `requirements.txt` + `requirements-local-stt.txt` + `fakeredis`; set
+  (needs `requirements.txt` + `requirements-local-stt.txt` + `fakeredis[lua]`; set
   `LOCAL_STT_TEST_REDIS_URL` to run the queue tests on a real Redis).
 
 ## Gotchas

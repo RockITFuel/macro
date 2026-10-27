@@ -62,8 +62,9 @@ speakers need loudness normalisation before the voice detector.
 - **Router** (`router.py`, pure): alive (heartbeat < 15 s, not draining) →
   capable (model family, accepted priorities) → not already failed on this job
   → has a free slot (recordings keep one slot free for live work) → under its
-  CPU-load and memory limits. Lowest estimated finish time wins: audio length ×
-  measured RTF × in-flight and load factors + 2 s per fallback tier.
+  CPU-load and memory limits. Lowest estimated finish time wins: the worker's
+  measured round trip to Redis + audio length × measured RTF × in-flight and
+  load factors + 0.05 s per fallback tier.
 - **Dispatcher** (`dispatcher.py`, in the hub, leader lock): assigns waiting
   jobs to worker inboxes; requeues jobs whose worker stopped heartbeating
   (MacBook lid closed) or missed the deadline (4× the estimate, at least 20 s
@@ -71,11 +72,16 @@ speakers need loudness normalisation before the voice detector.
   after 3 attempts; fails live jobs no worker can take after 10 s and expired
   live jobs; recordings wait for a worker.
 - **Workers** (`worker.py`): heartbeat every 2 s with model, hardware,
-  measured RTF (moving average), slots, load and free memory; take jobs with
-  `BLMOVE inbox → processing` and recover them after a crash.
+  measured RTF and round trip to Redis (moving averages), slots, load and free
+  memory. A job costs a worker two round trips: the `BLMOVE inbox →
+  processing` that delivers the assignment with its job and audio, and one
+  script that stores the result and releases it (luka-mini and the MacBook
+  are ~200 ms from Warsaw). Workers recover taken jobs after a crash.
 
-Default fallback order for live work: fastest alive of MacBook / luka-mini,
-then Warsaw (tier 2, live only, load ≤ 0.5 per core, 1 slot).
+Live work goes to the fastest estimate: usually the MacBook or luka-mini;
+Warsaw (tier 2, live only, load ≤ 0.5 per core, 1 slot) sits next to Redis
+and wins short utterances while it is idle, and takes everything live when
+the others are away.
 
 ## Configuration
 
@@ -83,6 +89,7 @@ then Warsaw (tier 2, live only, load ≤ 0.5 per core, 1 slot).
 | --- | --- | --- |
 | `MACRO_LOCAL_STT_REDIS_URL` | agent, hub, workers | The queue. On the agent: switches calls from Deepgram to local STT. |
 | `MACRO_LOCAL_STT_TIMEOUT_SECONDS` | agent | Seconds an utterance may wait (default 20). |
+| `MACRO_LOCAL_STT_SOCKET_TIMEOUT`, `MACRO_LOCAL_STT_CONNECT_TIMEOUT` | all | Redis read and connect timeouts (defaults 15 s, 5 s): a connection that died while a Mac slept fails and reconnects instead of hanging. |
 | `MACRO_LOCAL_STT_GATEWAY_TOKEN` | hub | Bearer token of the dictation gateway. |
 | `DICTATION_STT_API_BASE`, `DICTATION_STT_API_KEY` | document storage service | Dictation goes to this OpenAI-compatible API with this token instead of OpenAI. |
 | `LIVEKIT_TRANSCRIPTION_AGENT_NAME=macro-transcriber` | document storage service | Macro dispatches the agent to each call (needs `INTERNAL_CALL_SECRET`). |

@@ -97,6 +97,24 @@ async def _recording(args) -> None:
         print(json.dumps(asdict(result) if result else {"pending": job_id}, indent=2))
 
 
+def _install_task_dump() -> None:
+    """`kill -USR2 <pid>` logs every asyncio task's stack: where a stuck
+    worker or hub is waiting (py-spy only shows threads)."""
+    import faulthandler
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
+
+    def dump(*_):
+        loop = asyncio._get_running_loop()
+        if loop is None:
+            return
+        for task in asyncio.all_tasks(loop):
+            print(f"--- task {task.get_name()}", file=sys.stderr)
+            task.print_stack(file=sys.stderr)
+
+    signal.signal(signal.SIGUSR2, dump)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="local_stt")
     parser.add_argument(
@@ -161,6 +179,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     args = parser.parse_args(argv)
+    _install_task_dump()
     logging.basicConfig(
         level=_env("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",

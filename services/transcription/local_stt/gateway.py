@@ -115,6 +115,7 @@ async def status_snapshot(queue: SttQueue) -> dict:
                 "models": w.models,
                 "hardware": w.hardware,
                 "rtf": w.rtf,
+                "rtt_ms": round(w.rtt_s * 1000),
                 "in_flight": await queue.in_flight(w.id),
                 "max_concurrency": w.max_concurrency,
                 "cpu_load": w.cpu_load,

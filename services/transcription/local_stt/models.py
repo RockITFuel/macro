@@ -128,6 +128,8 @@ class WorkerInfo:
     mem_available_mb: int = 0
     min_free_mem_mb: int = 1024
     running: int = 0
+    # Round trip to Redis in seconds, measured on heartbeats.
+    rtt_s: float = 0.0
     draining: bool = False
     last_seen: float = 0.0
     # When the worker process started.

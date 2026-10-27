@@ -21,6 +21,8 @@
     <key>LOCAL_STT_MAX_CPU_LOAD</key><string>1.5</string>
     <key>LOCAL_STT_DOWNLOAD_DIR</key><string>@HOME@/work</string>
   </dict>
+  <!-- Luka's laptop: one job at a time, lower CPU priority than his apps. -->
+  <key>Nice</key><integer>10</integer>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Standard</string>

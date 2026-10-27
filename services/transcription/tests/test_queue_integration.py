@@ -196,6 +196,33 @@ class QueueIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.queue.queued(), ["rec-1"])
         self.assertEqual((await self.queue.job_state("rec-1"))["state"], "queued")
 
+    async def test_a_job_costs_the_worker_two_round_trips(self):
+        """Taking the assignment and settling the result; nothing else."""
+        commands: list[str] = []
+        worker_queue = SttQueue(
+            _Counting(self.queue.redis, commands), prefix=self.queue.prefix
+        )
+        worker = Worker(
+            worker_queue,
+            FakeEngine("twee keer"),
+            WorkerConfig(id="w", machine="w", max_cpu_load=1000.0, min_free_mem_mb=0),
+        )
+        await self.queue.heartbeat(worker.info())
+        client = SttClient(self.queue)
+        for scope in ("warm", "measured"):  # the first run loads the script
+            pending = asyncio.create_task(
+                client.transcribe(SECOND, scope=scope, timeout_s=5)
+            )
+            await asyncio.sleep(0.05)
+            await self.harness.dispatcher.tick()
+            commands.clear()
+            assignment = await worker_queue.take("w", 1.0)
+            await worker.process(assignment)
+            result = await pending
+            self.assertEqual(result.text, "twee keer")
+        self.assertEqual(commands, ["BLMOVE", "EVALSHA"])
+        self.assertEqual(await self.queue.in_flight("w"), 0)
+
     async def _only_job_state(self):
         running = await self.queue.running()
         self.assertEqual(len(running), 1)
@@ -204,3 +231,29 @@ class QueueIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _Counting:
+    """Redis proxy that records the commands a caller sends."""
+
+    def __init__(self, redis, log: list[str]):
+        self._redis = redis
+        self._log = log
+
+    def __getattr__(self, name):
+        return getattr(self._redis, name)
+
+    def register_script(self, script):
+        return self._redis.register_script(script).__class__(self, script)
+
+    async def evalsha(self, *args, **kwargs):
+        self._log.append("EVALSHA")
+        return await self._redis.evalsha(*args, **kwargs)
+
+    async def script_load(self, *args, **kwargs):
+        self._log.append("SCRIPT LOAD")
+        return await self._redis.script_load(*args, **kwargs)
+
+    async def blmove(self, *args, **kwargs):
+        self._log.append("BLMOVE")
+        return await self._redis.blmove(*args, **kwargs)
