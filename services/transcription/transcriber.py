@@ -56,6 +56,37 @@ VOICE_EMBEDDING_MIN_SECONDS = 1.0
 
 VOICE_EMBEDDING_BUFFER_SECONDS = 3.0
 
+# Local speech-to-text (services/transcription/local_stt): with this set, each
+# utterance goes through our own Redis queue and workers instead of LiveKit
+# Cloud's Deepgram. Unset keeps Deepgram.
+LOCAL_STT_REDIS_URL = os.environ.get("MACRO_LOCAL_STT_REDIS_URL") or None
+# Seconds an utterance may wait for a worker before it is dropped.
+LOCAL_STT_TIMEOUT_SECONDS = float(
+    os.environ.get("MACRO_LOCAL_STT_TIMEOUT_SECONDS", "20")
+)
+
+
+_local_stt_client = None
+
+
+def build_local_stt(vad, *, channel_id: str, participant_identity: str):
+    """The queue-backed STT for one participant, or None when it is off."""
+    global _local_stt_client
+    if not LOCAL_STT_REDIS_URL:
+        return None
+    from local_stt.client import SttClient, queue_from_env
+    from local_stt.livekit_stt import LocalQueueSTT
+
+    # One Redis connection pool per job process, shared by its participants.
+    if _local_stt_client is None:
+        _local_stt_client = SttClient(queue_from_env(LOCAL_STT_REDIS_URL))
+    return LocalQueueSTT(
+        client=_local_stt_client,
+        vad=vad,
+        scope=f"call:{channel_id}:{participant_identity}:{uuid.uuid4().hex}",
+        timeout_s=LOCAL_STT_TIMEOUT_SECONDS,
+    )
+
 
 @dataclass
 class _VoiceCluster:
@@ -156,10 +187,12 @@ class Transcriber(Agent):
         channel_id: str,
         http_client: httpx.AsyncClient,
         voice_encoder: VoiceEncoder | None = None,
+        stt: stt_pkg.STT | None = None,
     ):
         super().__init__(
             instructions="Transcribe user speech.",
-            stt=inference.STT(
+            stt=stt
+            or inference.STT(
                 "deepgram/nova-3",
                 language="multi",
                 extra_kwargs={
@@ -560,6 +593,11 @@ class MultiUserTranscriber:
                 channel_id=self.ctx.room.name,
                 http_client=self.http_client,
                 voice_encoder=self.ctx.proc.userdata.get("voice_encoder"),
+                stt=build_local_stt(
+                    self.ctx.proc.userdata["vad"],
+                    channel_id=self.ctx.room.name,
+                    participant_identity=participant.identity,
+                ),
             ),
             room=self.ctx.room,
             room_options=room_io.RoomOptions(
