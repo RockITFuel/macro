@@ -25,6 +25,8 @@ export const SupportedLanguages = [
   'sql',
   'bash',
   'svg',
+  'mermaid',
+  'flow',
 ] as const;
 
 export type SupportedLanguage = (typeof SupportedLanguages)[number];
@@ -144,6 +146,15 @@ export const LanguageDefinitions: Record<
     show: true,
     aliases: ['xml'],
     highlightsEnabled: true,
+  },
+  // Drawn as flowcharts in the web app. No aliases: the fence keeps its name.
+  mermaid: {
+    label: 'Mermaid',
+    show: true,
+  },
+  flow: {
+    label: 'Flow',
+    show: true,
   },
 } as const;
 

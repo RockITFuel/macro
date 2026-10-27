@@ -74,6 +74,11 @@ import { Dynamic } from 'solid-js/web';
 import { replaceCitations } from '../../citationsUtils';
 import { MarkdownHostContext } from '../../context/MarkdownHostContext';
 import '../../styles.css';
+import {
+  type FlowMode,
+  FlowPreview,
+  flowLanguage,
+} from '@app/features/flow-block';
 import type { BlockName } from '@core/block';
 import {
   ENABLE_STATIC_DOCUMENT_CARDS,
@@ -830,6 +835,8 @@ function StaticCodeContainer(props: {
   nodes: any;
 }) {
   const [isPreviewMode, setIsPreviewMode] = createSignal(false);
+  const [flowMode, setFlowMode] = createSignal<FlowMode>('diagram');
+  const flow = () => flowLanguage(props.language);
 
   const showPreview = () => {
     return (
@@ -838,6 +845,7 @@ function StaticCodeContainer(props: {
       isPreviewMode()
     );
   };
+  const showFlow = () => flow() !== null && flowMode() === 'diagram';
 
   return (
     <div
@@ -856,14 +864,25 @@ function StaticCodeContainer(props: {
         theme={props.theme}
         isPreviewMode={isPreviewMode}
         setIsPreviewMode={setIsPreviewMode}
+        flowMode={flow() ? flowMode : undefined}
+        setFlowMode={setFlowMode}
       />
-      <Show when={!showPreview()}>
+      <Show when={!showPreview() && !showFlow()}>
         <pre
           class={props.theme.static?.['code'] ?? props.theme.code}
           data-gutter={CodeHighlightShim.getLineNumbers(props.text)}
         >
           {props.nodes}
         </pre>
+      </Show>
+      <Show when={showFlow() && flow()}>
+        {(language) => (
+          <FlowPreview
+            language={language()}
+            source={props.text}
+            class="rounded-b-[inherit] border-t border-edge-divider"
+          />
+        )}
       </Show>
     </div>
   );

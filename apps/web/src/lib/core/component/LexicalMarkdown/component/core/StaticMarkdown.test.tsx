@@ -1,7 +1,8 @@
+import { installCanvasDom } from '@app/features/flow-block/tests/jsdom-canvas';
 import { ChatMessageMarkdown } from '@core/component/AI/component/message/ChatMessageMarkdown';
-import { render, waitFor } from '@solidjs/testing-library';
+import { fireEvent, render, waitFor } from '@solidjs/testing-library';
 import { createSignal, type JSX } from 'solid-js';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { replaceCitations } from '../../citationsUtils';
 import { StaticMarkdown, StaticMarkdownContext } from './StaticMarkdown';
 
@@ -285,6 +286,64 @@ describe('static markdown citations', () => {
 
     expect(rendered.container.textContent).toBe('second resolved');
     vi.mocked(replaceCitations).mockReset();
+    rendered.unmount();
+  });
+});
+
+describe('flow blocks in agent chat', () => {
+  beforeAll(installCanvasDom);
+
+  const answer = [
+    'Here is the flow:',
+    '',
+    '```mermaid',
+    'flowchart LR',
+    '  A[Start] --> B{Ready?}',
+    '```',
+    '',
+    'Done.',
+  ].join('\n');
+
+  it('draws a mermaid fence as a chart and toggles to its source', async () => {
+    const rendered = render(() => (
+      <StaticMarkdownContext>
+        <ChatMessageMarkdown text={answer} generating={() => false} />
+      </StaticMarkdownContext>
+    ));
+    expect(
+      rendered.container.querySelector('[data-flow-preview]')
+    ).not.toBeNull();
+    await waitFor(() => {
+      const labels = [
+        ...rendered.container.querySelectorAll('.flow-step strong'),
+      ];
+      expect(labels.map((n) => n.textContent)).toEqual(['Start', 'Ready?']);
+    });
+    expect(rendered.container.querySelector('pre')).toBeNull();
+
+    fireEvent.click(rendered.getByText('Source', { exact: true }));
+    // The highlighter sets innerText, which jsdom leaves empty; the gutter
+    // still shows the source's two lines.
+    await waitFor(() =>
+      expect(
+        rendered.container.querySelector('pre')?.getAttribute('data-gutter')
+      ).toBe('1\n2\n')
+    );
+    expect(rendered.container.querySelector('[data-flow-preview]')).toBeNull();
+    rendered.unmount();
+  });
+
+  it('leaves other code fences alone', () => {
+    const rendered = render(() => (
+      <StaticMarkdownContext>
+        <ChatMessageMarkdown
+          text={'```js\nconst a = 1;\n```'}
+          generating={() => false}
+        />
+      </StaticMarkdownContext>
+    ));
+    expect(rendered.container.querySelector('[data-flow-preview]')).toBeNull();
+    expect(rendered.container.querySelector('pre')).not.toBeNull();
     rendered.unmount();
   });
 });

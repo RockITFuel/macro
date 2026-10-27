@@ -2,9 +2,10 @@
 
 use prompt::{BASE_PROMPT, TOOL_USE_PROMPT};
 
-const BASE_TITLES: [&str; 6] = [
+const BASE_TITLES: [&str; 7] = [
     "# Tone and Style",
     "# Math Rendering Rules",
+    "# Flowcharts",
     "# Citation Rules",
     "# Mentioning documents, people, dates, agent sessions, and other chips",
     "# Do Not Rules",
