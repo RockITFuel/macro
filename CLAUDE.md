@@ -4,6 +4,12 @@ Macro is a document and collaboration app with a Rust backend and a web frontend
 This file is the shared entry point: `AGENTS.md` symlinks to `CLAUDE.md`. Edit
 `CLAUDE.md` and preserve the symlink; do not maintain two copies.
 
+## This fork
+
+RockITFuel's self-hosted fork: read [SELF_HOST.md](SELF_HOST.md) for builds,
+deploy and configuration. For Rust edit loops use `cargo blaze` (run, test,
+build); final checks and images use plain `cargo`.
+
 ## Start here
 
 Unless the user says otherwise, before writing any code:
