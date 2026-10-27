@@ -141,8 +141,9 @@ impl<R: EventRunRepository, A: CurrentOwnerAccess, E: EventExecutor, C: EventCon
             Ok(run) => run,
             Err(reason) => return self.cancel(&pending, reason).await,
         };
-        if let ConditionRequirement::AnyOf(conditions) =
-            configuration.filters.condition_requirement(&pending.event)
+        if let ConditionRequirement::AnyOf(conditions) = configuration
+            .filters
+            .condition_requirement(&pending.event, pending.hop > 0)
         {
             match self.conditions.check(owner, &authorized, &conditions).await {
                 Ok(ConditionVerdict::Met(_)) => {}

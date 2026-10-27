@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM agent_work_chain WHERE user_id = $1 AND bot_id = $2 AND ends_at < $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d4c3165e8a57ab76b475a0d76d0e2876b27afe859adf87cd47074aed075752fd"
+}

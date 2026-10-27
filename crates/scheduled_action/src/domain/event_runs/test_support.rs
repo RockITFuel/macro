@@ -50,8 +50,9 @@ pub fn pending(configuration: &EventActionConfiguration) -> PendingEventRun {
     PendingEventRun {
         action_id: configuration.action_id,
         revision: configuration.revision,
-        event: incoming().normalize().unwrap(),
+        event: incoming().normalize().unwrap().reference,
         admitted_at: Utc::now(),
+        hop: 0,
     }
 }
 
@@ -195,6 +196,7 @@ impl EventRunRepository for Repo {
         id: Uuid,
         revision: ConfigurationRevision,
         event: &EventReference,
+        hop: u8,
     ) -> Result<AdmissionResult, Report> {
         let mut state = self.0.lock().unwrap();
         let pending = PendingEventRun {
@@ -202,6 +204,7 @@ impl EventRunRepository for Repo {
             revision,
             event: event.clone(),
             admitted_at: Utc::now(),
+            hop,
         };
         if state.pending.iter().any(|p| p.key() == pending.key())
             || state
@@ -214,6 +217,15 @@ impl EventRunRepository for Repo {
         }
         state.pending.push(pending);
         Ok(AdmissionResult::Admitted)
+    }
+    async fn bot_runs_since(&self, id: Uuid, since: DateTime<Utc>) -> Result<u32, Report> {
+        let state = self.0.lock().unwrap();
+        let pending = state.pending.iter();
+        let started = state.started.iter().map(|(run, _, _)| run);
+        Ok(pending
+            .chain(started)
+            .filter(|run| run.action_id == id && run.hop > 0 && run.admitted_at >= since)
+            .count() as u32)
     }
     async fn pending_runs(&self, limit: PageSize) -> Result<Vec<PendingEventRun>, Report> {
         let state = self.0.lock().unwrap();

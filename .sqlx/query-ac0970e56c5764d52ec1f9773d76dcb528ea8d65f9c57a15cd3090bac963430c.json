@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT COUNT(*) AS \"count!\" FROM agent_work_chain\n                WHERE user_id = $1 AND bot_id = $2 AND routine_id IS NULL AND hop > 0 AND started_at >= $3\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ac0970e56c5764d52ec1f9773d76dcb528ea8d65f9c57a15cd3090bac963430c"
+}

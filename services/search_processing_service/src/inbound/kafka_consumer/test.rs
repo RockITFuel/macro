@@ -786,6 +786,7 @@ fn message_event_cases() -> Vec<(MessageTopicEvent, MessageEventDescription)> {
                 thread_id: None,
                 root_id: MESSAGE_ID,
                 sender: sender.clone(),
+                triggered_by: None,
                 content: "hello @bot".to_string(),
                 mentioned: messages::domain::models::SimpleMention {
                     entity_type: "bot".to_string(),

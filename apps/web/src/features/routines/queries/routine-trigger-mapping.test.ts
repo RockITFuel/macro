@@ -25,6 +25,23 @@ describe('routine trigger mapping', () => {
     }
   );
 
+  it('round trips bot activity limits on an event filter', () => {
+    const config = {
+      type: 'events' as const,
+      filters: [
+        {
+          events: ['channel.message_posted' as const],
+          bot_activity: { max_hops: 2, max_runs_per_hour: 5 },
+        },
+      ],
+    };
+    const triggers = parseRoutineTriggers(config)!;
+    expect(triggers[0]).toMatchObject({
+      botActivity: { max_hops: 2, max_runs_per_hour: 5 },
+    });
+    expect(serializeTriggers(triggers)).toEqual(config);
+  });
+
   it('round trips multiple schedules with different time zones and Macro events', () => {
     const configuration = {
       type: 'multiple' as const,

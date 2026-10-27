@@ -74,6 +74,11 @@ that listener is ready. Cancellation can stop the gate before startup finishes.
   (both reject unknown fields, and older clients omit it), plus every query in
   `pg_scheduled_action_repo.rs` and the event-run claim in `pg_event_run_repo.rs`,
   which builds its own `ScheduledAction`.
+- Bot-caused events match only filters with `bot_activity`. Admission reads
+  the cause from `agent_session::domain::work_chain` (`with_work_chain`),
+  drops the routine's own output, enforces the hop and hourly limits, and
+  stores the run's `hop`; `TargetRunner` records every run as a chain link.
+  Without a work chain, bot events are rejected as before.
 - `run_visibility` is copied onto each run's agent session when the run is
   prepared, so changing it affects later runs only.
 

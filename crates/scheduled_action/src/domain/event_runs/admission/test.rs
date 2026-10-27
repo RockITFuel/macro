@@ -1,6 +1,6 @@
 use super::super::test_support::*;
 use super::*;
-use serde_json::json;
+use serde_json::{Value, json};
 
 #[tokio::test]
 async fn pages_all_candidates_and_redelivery_deduplicates_using_owner_not_actor() {
@@ -114,8 +114,10 @@ async fn denied_and_mismatched_receipts_skip_but_unavailable_access_defers_intak
         EventIngestionResult::Admitted { inserted: 0 }
     );
     *access.denied.lock().unwrap() = false;
-    *access.override_receipt.lock().unwrap() =
-        Some(capability(user(), &incoming().normalize().unwrap()));
+    *access.override_receipt.lock().unwrap() = Some(capability(
+        user(),
+        &incoming().normalize().unwrap().reference,
+    ));
     assert_eq!(
         service.ingest(&incoming()).await.unwrap(),
         EventIngestionResult::Admitted { inserted: 0 }
@@ -199,4 +201,157 @@ async fn mentions_mail_and_calls_only_admit_their_recipient_even_when_others_hav
             EventIngestionResult::Admitted { inserted: 0 }
         );
     }
+}
+
+/// Work recorded in the bot work chain, as one fixed cause.
+struct FixedChain(agent_session::domain::work_chain::ChainCause);
+
+impl WorkChain for FixedChain {
+    fn cause<'a>(
+        &'a self,
+        _bot: bot_id::BotId,
+        _user: &'a MacroUserIdStr<'static>,
+        _at: DateTime<Utc>,
+    ) -> agent_session::domain::work_chain::ChainFuture<'a, ChainCause> {
+        let cause = self.0.clone();
+        Box::pin(async move { Ok(cause) })
+    }
+    fn start(
+        &self,
+        _link: agent_session::domain::work_chain::ChainLink,
+    ) -> agent_session::domain::work_chain::ChainFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+    fn finish(
+        &self,
+        _id: Uuid,
+        _at: DateTime<Utc>,
+    ) -> agent_session::domain::work_chain::ChainFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+    fn mention_sessions_since<'a>(
+        &'a self,
+        _bot: bot_id::BotId,
+        _user: &'a MacroUserIdStr<'static>,
+        _since: DateTime<Utc>,
+    ) -> agent_session::domain::work_chain::ChainFuture<'a, u32> {
+        Box::pin(async { Ok(0) })
+    }
+}
+
+/// A document edit an agent made for the routine owner.
+fn bot_edit() -> IncomingEvent {
+    IncomingEvent {
+        event_id: generate_uuid_v7(),
+        schema_version: 1,
+        payload: crate::domain::event_trigger::EventPayload::Document(
+            serde_json::from_value(json!({
+                "event_type": "document.updated", "metadata": {
+                    "document_id": generate_uuid_v7(), "owner": user().as_ref(),
+                    "actor": "bot|01900000-0000-7000-8000-000000000004",
+                    "on_behalf_of": user().as_ref(), "share_permission_updated": false
+                }
+            }))
+            .unwrap(),
+        ),
+    }
+}
+
+fn bot_configuration(bot_activity: Value) -> EventActionConfiguration {
+    EventActionConfiguration {
+        filters: serde_json::from_value(
+            json!([{"events": ["document.updated"], "bot_activity": bot_activity}]),
+        )
+        .unwrap(),
+        ..configuration()
+    }
+}
+
+fn chain(hop: u8, routines: Vec<Uuid>) -> Arc<dyn WorkChain> {
+    Arc::new(FixedChain(ChainCause { hop, routines }))
+}
+
+async fn admitted_hops(
+    configuration: EventActionConfiguration,
+    chain: Arc<dyn WorkChain>,
+    earlier_bot_runs: u8,
+) -> Vec<u8> {
+    let repo = Arc::new(Repo::default());
+    for _ in 0..earlier_bot_runs {
+        repo.0.lock().unwrap().pending.push(PendingEventRun {
+            hop: 1,
+            ..pending(&configuration)
+        });
+    }
+    repo.0.lock().unwrap().configurations = vec![configuration];
+    let service = EventAdmissionService::new(
+        repo.clone(),
+        Arc::new(Access::default()),
+        10.try_into().unwrap(),
+    )
+    .with_work_chain(chain);
+    service.ingest(&bot_edit()).await.unwrap();
+    let state = repo.0.lock().unwrap();
+    state.pending[usize::from(earlier_bot_runs)..]
+        .iter()
+        .map(|run| run.hop)
+        .collect()
+}
+
+#[tokio::test]
+async fn bot_activity_starts_only_routines_that_accept_it() {
+    let people_only = configuration();
+    assert_eq!(
+        admitted_hops(people_only, chain(0, vec![]), 0).await,
+        Vec::<u8>::new()
+    );
+    assert_eq!(
+        admitted_hops(bot_configuration(json!({})), chain(0, vec![]), 0).await,
+        vec![1]
+    );
+}
+
+#[tokio::test]
+async fn a_bot_chain_stops_at_its_hop_limit() {
+    let configuration = || bot_configuration(json!({"max_hops": 3}));
+    assert_eq!(
+        admitted_hops(configuration(), chain(2, vec![]), 0).await,
+        vec![3]
+    );
+    assert_eq!(
+        admitted_hops(configuration(), chain(3, vec![]), 0).await,
+        Vec::<u8>::new()
+    );
+}
+
+#[tokio::test]
+async fn a_routine_never_runs_for_its_own_output() {
+    let configuration = bot_configuration(json!({}));
+    let own = chain(0, vec![configuration.action_id]);
+    assert_eq!(admitted_hops(configuration, own, 0).await, Vec::<u8>::new());
+}
+
+#[tokio::test]
+async fn bot_caused_runs_are_rate_limited_per_routine() {
+    let configuration = || bot_configuration(json!({"max_runs_per_hour": 2}));
+    assert_eq!(
+        admitted_hops(configuration(), chain(0, vec![]), 1).await,
+        vec![1]
+    );
+    assert_eq!(
+        admitted_hops(configuration(), chain(0, vec![]), 2).await,
+        Vec::<u8>::new()
+    );
+}
+
+#[tokio::test]
+async fn without_a_work_chain_bot_activity_is_rejected() {
+    let repo = Arc::new(Repo::default());
+    repo.0.lock().unwrap().configurations = vec![bot_configuration(json!({}))];
+    let service =
+        EventAdmissionService::new(repo, Arc::new(Access::default()), 10.try_into().unwrap());
+    assert_eq!(
+        service.ingest(&bot_edit()).await.unwrap(),
+        EventIngestionResult::Rejected(EventRejection::UnsafeAttribution)
+    );
 }

@@ -5,6 +5,7 @@
  * API for managing scheduled actions
  * OpenAPI spec version: 0.1.0
  */
+import type { EventFilterBotActivity } from './eventFilterBotActivity';
 import type { EventFilterCondition } from './eventFilterCondition';
 import type { EventFilterIds } from './eventFilterIds';
 import type { EventName } from './eventName';
@@ -14,6 +15,7 @@ import type { EventName } from './eventName';
 condition further requires the event's content to answer it with yes.
  */
 export interface EventFilter {
+  bot_activity?: EventFilterBotActivity;
   /**
    * Yes/no question about the triggering content, e.g. "Is this email an
 invoice?". The routine runs only when the answer is yes.

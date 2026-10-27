@@ -33,7 +33,21 @@ Recurring schedules use the time zone they were created in. One-time runs use yo
 - **Tasks**: task created, status changed, priority changed, or any property changed
 - **Email**: new email received. Spam, trash, and drafts are excluded.
 
-Message, mention, deletion, and task triggers can be scoped to specific channels, documents, or tasks, or to everything you have access to. Changes made by agents and bots do not fire triggers.
+Message, mention, deletion, and task triggers can be scoped to specific channels, documents, or tasks, or to everything you have access to.
+
+### Agent hand-offs
+
+By default, changes made by agents and bots do not fire triggers. Check **Also when agents and bots do this** on a channel, document, or task trigger to let an agent acting for you hand work to the routine, for example a routine that reacts when another routine's agent posts in a channel. Message edits and attachments still only fire for people.
+
+Limits keep agents from triggering each other forever:
+
+- **Hops**: every hand-off from an agent's work to the next agent's work is a hop. A chain stops after 3 hops since the last thing a person did.
+- **Own changes**: a routine never runs for changes made by its own runs.
+- **Rate**: changes by agents start at most 10 runs of a routine per hour.
+
+Through the API, set `bot_activity` on an event filter, with optional `max_hops` (1 to 5) and `max_runs_per_hour` (1 to 60).
+
+When an agent @mentions another agent in a channel, the mentioned agent starts working for the person the first agent acts for, as if that person had mentioned it. The same hop limit applies, and each agent starts at most 20 sessions an hour from other agents' mentions.
 
 Click a trigger chip to edit it. Choose **Remove trigger** to delete it.
 

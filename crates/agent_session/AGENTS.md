@@ -81,6 +81,10 @@ persisted prompter, never from an old wire actor or a newer user turn.
 
 ## Gotchas
 
+- `domain::work_chain` (port) and `outbound::work_chain` (`agent_work_chain`
+  table) bound bots triggering bots: routines and the agent trigger record
+  each piece of bot work with its hop and window, and read the cause of a
+  bot's activity by bot, acting user and time.
 - Where a session is shown is `agent_session.visibility` (`listed`,
   `unlisted`, `hidden`); `hidden` replaces `list_hidden`. Never read or write
   `list_hidden`: until a later migration drops it, the

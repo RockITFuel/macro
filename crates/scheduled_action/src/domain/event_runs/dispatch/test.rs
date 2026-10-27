@@ -197,10 +197,10 @@ async fn two_events_queue_during_execution_then_failure_does_not_block_next() {
         .unwrap();
     let second = pending(&configuration);
     let third = pending(&configuration);
-    repo.admit(second.action_id, second.revision, &second.event)
+    repo.admit(second.action_id, second.revision, &second.event, 0)
         .await
         .unwrap();
-    repo.admit(third.action_id, third.revision, &third.event)
+    repo.admit(third.action_id, third.revision, &third.event, 0)
         .await
         .unwrap();
     let service = EventDispatchService::new(repo.clone(), access, executor.clone());

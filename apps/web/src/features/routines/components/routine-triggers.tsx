@@ -24,6 +24,7 @@ import {
   Switch,
 } from 'solid-js';
 import {
+  acceptsBotActivity,
   type EventTriggerDraft,
   eventScopeKind,
   eventTriggerLabel,
@@ -40,6 +41,7 @@ import {
   parseRecurringSchedule,
   scheduleTriggerLabel,
 } from '../core/schedule-language';
+import { RoutineBotActivity } from './routine-bot-activity';
 import { RoutineScheduleSettings } from './routine-schedule-settings';
 
 type EventSlots = {
@@ -405,6 +407,14 @@ function TriggerChip(
                     {props.renderEventCondition?.(value, (condition) =>
                       edit({ ...value(), condition })
                     )}
+                    <Show when={acceptsBotActivity(value())}>
+                      <RoutineBotActivity
+                        trigger={value()}
+                        onChange={(botActivity) =>
+                          edit({ ...value(), botActivity })
+                        }
+                      />
+                    </Show>
                   </>
                 )}
               </Show>

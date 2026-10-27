@@ -191,6 +191,9 @@ pub struct PendingEventRun {
     pub revision: ConfigurationRevision,
     pub event: EventReference,
     pub admitted_at: DateTime<Utc>,
+    /// Bot hand-offs since the last human action; 0 when a person caused the
+    /// event.
+    pub hop: u8,
 }
 
 impl PendingEventRun {
@@ -363,7 +366,16 @@ pub trait EventRunRepository: Send + Sync + 'static {
         action_id: Uuid,
         revision: ConfigurationRevision,
         event: &EventReference,
+        hop: u8,
     ) -> impl Future<Output = Result<AdmissionResult, Report>> + Send;
+
+    /// Runs of the action that bot activity caused (hop above 0), admitted
+    /// at or after `since`.
+    fn bot_runs_since(
+        &self,
+        action_id: Uuid,
+        since: DateTime<Utc>,
+    ) -> impl Future<Output = Result<u32, Report>> + Send;
 
     /// Oldest pending run per available action, in durable admission order.
     /// Busy actions must not starve independent actions out of this page.

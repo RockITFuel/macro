@@ -81,6 +81,7 @@ struct PendingRow {
     configuration_revision: i64,
     event_context: Value,
     admitted_at: DateTime<Utc>,
+    hop: i16,
 }
 
 impl TryFrom<PendingRow> for PendingEventRun {
@@ -93,6 +94,7 @@ impl TryFrom<PendingRow> for PendingEventRun {
             revision: row.configuration_revision.try_into()?,
             event: serde_json::from_value(row.event_context)?,
             admitted_at: row.admitted_at,
+            hop: u8::try_from(row.hop)?,
         })
     }
 }
@@ -185,6 +187,7 @@ impl EventRunRepository for PgEventRunRepo {
         action_id: Uuid,
         revision: ConfigurationRevision,
         event: &EventReference,
+        hop: u8,
     ) -> Result<AdmissionResult, Report> {
         let mut tx = self.pool.begin().await?;
         // Unlike dispatch, intake must wait: skipping a locked row would permit
@@ -218,13 +221,14 @@ impl EventRunRepository for PgEventRunRepo {
         });
         let inserted = sqlx::query!(
             r#"
-            INSERT INTO scheduled_action_event_run (action_id, event_id, configuration_revision, event_context)
-            VALUES ($1, $2, $3, $4) ON CONFLICT (action_id, event_id) DO NOTHING
+            INSERT INTO scheduled_action_event_run (action_id, event_id, configuration_revision, event_context, hop)
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (action_id, event_id) DO NOTHING
             "#,
             action_id,
             event.event_id().as_uuid(),
             revision.get(),
             context,
+            i16::from(hop),
         )
         .execute(&mut *tx)
         .await?;
@@ -236,16 +240,30 @@ impl EventRunRepository for PgEventRunRepo {
         }
     }
 
+    async fn bot_runs_since(&self, action_id: Uuid, since: DateTime<Utc>) -> Result<u32, Report> {
+        let count = sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(*) AS "count!" FROM scheduled_action_event_run
+            WHERE action_id = $1 AND hop > 0 AND admitted_at >= $2
+            "#,
+            action_id,
+            since,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
     async fn pending_runs(&self, limit: PageSize) -> Result<Vec<PendingEventRun>, Report> {
         // Expired manual claims may be replaced, but an event claim must first
         // be reconciled to interrupted, even after its action claim expires.
         let rows = sqlx::query_as!(
             PendingRow,
             r#"
-            SELECT r.action_id, r.event_id, r.configuration_revision, r.event_context, r.admitted_at
+            SELECT r.action_id, r.event_id, r.configuration_revision, r.event_context, r.admitted_at, r.hop
             FROM scheduled_action a
             CROSS JOIN LATERAL (
-                SELECT action_id, event_id, configuration_revision, event_context, admitted_at, admission_order
+                SELECT action_id, event_id, configuration_revision, event_context, admitted_at, admission_order, hop
                 FROM scheduled_action_event_run
                 WHERE action_id = a.id AND state = 'pending'
                 ORDER BY admission_order LIMIT 1
@@ -309,7 +327,7 @@ impl EventRunRepository for PgEventRunRepo {
         let pending = sqlx::query_as!(
             PendingRow,
             r#"
-            SELECT action_id, event_id, configuration_revision, event_context, admitted_at
+            SELECT action_id, event_id, configuration_revision, event_context, admitted_at, hop
             FROM scheduled_action_event_run
             WHERE action_id = $1 AND state = 'pending'
             ORDER BY admission_order LIMIT 1 FOR UPDATE

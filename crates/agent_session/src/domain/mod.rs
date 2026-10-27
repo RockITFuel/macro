@@ -53,3 +53,6 @@ pub mod tool_actions;
 
 /// Durable system notifications.
 pub mod notifications;
+
+/// Bounds chains of bots triggering bots.
+pub mod work_chain;
