@@ -1,4 +1,4 @@
-import { $isListNode } from '@lexical/list';
+import { $isListItemNode, $isListNode, type ListNode } from '@lexical/list';
 import {
   CHECK_LIST,
   type ElementTransformer,
@@ -41,10 +41,43 @@ const customTransformer = (
           nextNode.setStart(start);
         }
       }
+      const previous = parentNode.getPreviousSibling();
       original.replace(parentNode, children, match, isImport);
+      // Lexical only nests an indented item into a list of its own type, so
+      // a bullet under a numbered item would start a new top-level list.
+      const created = previous?.getNextSibling();
+      if (
+        isImport &&
+        match[1] &&
+        $isListNode(previous) &&
+        $isListNode(created) &&
+        previous.getListType() !== created.getListType()
+      ) {
+        for (const item of created.getChildren())
+          $mergeListItem(previous, item);
+        created.remove();
+      }
     },
   };
 };
+
+/** The list nested in `item` when it is only a wrapper for one. */
+function $nestedList(item: LexicalNode | null): ListNode | null {
+  if (!$isListItemNode(item) || item.getChildrenSize() !== 1) return null;
+  const child = item.getFirstChild();
+  return $isListNode(child) ? child : null;
+}
+
+/** Append `item` to `list`, joining nested lists of the same type. */
+function $mergeListItem(list: ListNode, item: LexicalNode) {
+  const incoming = $nestedList(item);
+  const last = $nestedList(list.getLastChild());
+  if (incoming && last && last.getListType() === incoming.getListType()) {
+    for (const child of incoming.getChildren()) $mergeListItem(last, child);
+    return;
+  }
+  list.append(item);
+}
 
 export const CUSTOM_TRANSFORMERS: Transformer[] = [
   ...HTML_TEXT_FORMAT_TRANSFORMERS,

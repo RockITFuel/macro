@@ -73,7 +73,9 @@ export const IMAGE: ElementTransformer = {
     const url = node.getUrl();
     return `![${altText}](${url})`;
   },
-  regExp: /!\[([^\]]*)\]\(([^)\s]+)(?:\s"([^"]*)"\s*)?\)$/,
+  // An image node is a whole block: only a line holding just the image
+  // becomes one, so text before an inline image is not lost.
+  regExp: /^!\[([^\]]*)\]\(([^)\s]+)(?:\s"([^"]*)"\s*)?\)$/,
   replace: (node, _, match) => {
     const [, altText, imageUrl] = match;
     const imageNode = $createImageNode({
