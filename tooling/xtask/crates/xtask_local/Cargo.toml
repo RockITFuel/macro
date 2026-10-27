@@ -53,6 +53,8 @@ xtask_paths = { path = "../xtask_paths" }
 
 [dev-dependencies]
 jsonwebtoken = { workspace = true }
+# The proxy tests check the public storage route's query pattern.
+regex = { workspace = true }
 
 [features]
 # Local Kafka topic provisioning (`run-local` / `kafka-provision`). Off by

@@ -119,6 +119,9 @@ pub struct Bucket {
     pub name: &'static str,
     /// The env var services read to find this bucket.
     pub env_key: &'static str,
+    /// Whether browsers upload into it with presigned PUT URLs (through the
+    /// proxy's `/local-storage` route); a public proxy refuses PUTs elsewhere.
+    pub browser_uploads: bool,
 }
 
 /// A DynamoDB table: the name and its env var. The table *schema* lives with the
@@ -281,37 +284,45 @@ pub const BUCKETS: &[Bucket] = &[
     Bucket {
         name: "macro-email-attachments",
         env_key: "ATTACHMENT_BUCKET",
+        browser_uploads: false,
     },
     Bucket {
         name: DOC_STORAGE_BUCKET,
         env_key: "DOCUMENT_STORAGE_BUCKET",
+        browser_uploads: true,
     },
     Bucket {
         name: "docx-upload",
         env_key: "DOCX_DOCUMENT_UPLOAD_BUCKET",
+        browser_uploads: true,
     },
     Bucket {
         name: "static-file-storage",
         env_key: "STATIC_STORAGE_BUCKET",
+        browser_uploads: true,
     },
     Bucket {
         name: "bulk-upload-staging",
         env_key: "UPLOAD_STAGING_BUCKET",
+        browser_uploads: true,
     },
     Bucket {
         name: "macro-call-recording-local",
         env_key: "CALL_RECORDING_BUCKET_NAME",
+        browser_uploads: false,
     },
     Bucket {
         // The patch behind each agent session's Changes pane.
         name: "agent-session-changes",
         env_key: "AGENT_SESSION_CHANGES_BUCKET",
+        browser_uploads: false,
     },
     Bucket {
         // The patch behind each pull request's Changes pane, shared with the
         // agent sessions that work on that pull request.
         name: "github-pull-request-patches",
         env_key: "GITHUB_PULL_REQUEST_PATCH_BUCKET",
+        browser_uploads: false,
     },
 ];
 

@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 
 use super::gen_compose::{caddyfile_path, tls_certs_dir};
 use super::instance::{Instance, Port};
-use super::{Mode, inventory};
+use super::{Mode, inventory, resources};
 
 /// The host-facing proxy origin. The local reverse proxy speaks HTTPS using
 /// a machine certificate signed by the checked-in development CA.
@@ -98,10 +98,12 @@ pub fn write_caddyfile(
 /// non-inventory routes, the mode's static-file block, the optional
 /// static-frontend block, then the tail.
 fn caddyfile(mode: Mode, static_frontend: bool, public: bool) -> String {
-    let static_block = if mode.spec().static_files_via_localstack {
-        STATIC_FILE_LOCAL
+    let static_block = if !mode.spec().static_files_via_localstack {
+        STATIC_FILE_DEV.to_owned()
+    } else if public {
+        public_storage_block()
     } else {
-        STATIC_FILE_DEV
+        STATIC_FILE_LOCAL.to_owned()
     };
     // Mailpit holds every login code; a public stack must not serve it.
     let mailpit_block = if static_frontend && mode.spec().runs_local_infra && !public {
@@ -327,6 +329,72 @@ const STATIC_FILE_LOCAL: &str = r#"    handle_path /local-storage/* {
         }
     }
 "#;
+
+/// A query an object request may carry: none, or only the parameters of an
+/// SDK presigned URL (`X-Amz-*`, `x-amz-checksum-*`, `x-id`) and S3's
+/// `response-*` overrides.
+/// Everything else (`list-type`, `prefix`, `uploads`, `uploadId`, `Action`,
+/// ...) addresses some other S3 or LocalStack API.
+const OBJECT_QUERY: &str = r#"^(((?i:x-amz-)[A-Za-z0-9-]+|x-id|response-[a-z-]+)=[^&]*(&((?i:x-amz-)[A-Za-z0-9-]+|x-id|response-[a-z-]+)=[^&]*)*)?$"#;
+
+/// Public: the same two routes as [`STATIC_FILE_LOCAL`], restricted to what
+/// the app does with them. LocalStack checks no credentials and answers every
+/// AWS API on its one port, so an unrestricted route would let anyone list
+/// and overwrite every bucket and call SQS, DynamoDB and KMS. Objects can be
+/// read (`GET`/`HEAD` of `/<bucket>/<key>`) in the catalog's buckets, and
+/// written only with a presigned `PUT` into the buckets browsers upload to;
+/// caller credentials and API targets are stripped, and anything else is 403.
+fn public_storage_block() -> String {
+    let buckets = |uploads_only: bool| {
+        resources::BUCKETS
+            .iter()
+            .filter(|bucket| !uploads_only || bucket.browser_uploads)
+            .map(|bucket| bucket.name)
+            .collect::<Vec<_>>()
+            .join("|")
+    };
+    format!(
+        r#"    handle_path /local-storage/* {{
+        @read {{
+            method GET HEAD
+            path_regexp ^/({read})/.+
+            expression `{{query}}.matches("{OBJECT_QUERY}")`
+        }}
+        @upload {{
+            method PUT
+            path_regexp ^/({upload})/.+
+            query X-Amz-Signature=*
+            expression `{{query}}.matches("{OBJECT_QUERY}")`
+        }}
+        route {{
+            request_header -Authorization
+            request_header -X-Amz-Target
+            reverse_proxy @read localstack:4566
+            reverse_proxy @upload localstack:4566
+            respond 403
+        }}
+    }}
+    handle_path /static-file/* {{
+        @svc path /api/* /internal/*
+        @read {{
+            method GET HEAD
+            path_regexp ^/.+
+            expression `{{query}}.matches("{OBJECT_QUERY}")`
+        }}
+        route {{
+            reverse_proxy @svc static-file-service:8080
+            request_header -Authorization
+            request_header -X-Amz-Target
+            rewrite @read /static-file-storage{{uri}}
+            reverse_proxy @read localstack:4566
+            respond 403
+        }}
+    }}
+"#,
+        read = buckets(false),
+        upload = buckets(true),
+    )
+}
 
 /// Dev: no local LocalStack — route all static-file paths through the local
 /// static-file-service (which is pointed at dev S3).

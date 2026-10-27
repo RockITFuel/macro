@@ -260,3 +260,65 @@ fn a_public_proxy_serves_neither_mailpit_nor_wildcard_cors() {
     assert!(public.contains("handle_path /app/*"));
     assert!(public.contains("handle_path /auth/*"));
 }
+
+#[test]
+fn a_public_proxy_only_reads_objects_and_takes_presigned_uploads() {
+    let local = caddyfile(Mode::Local, true, false);
+    assert!(local.contains(STATIC_FILE_LOCAL));
+
+    let public = caddyfile(Mode::Local, true, true);
+    assert!(!public.contains(STATIC_FILE_LOCAL));
+    let storage = public_storage_block();
+    assert!(public.contains(&storage));
+    for bucket in resources::BUCKETS {
+        assert!(
+            storage.contains(bucket.name),
+            "{} is not readable",
+            bucket.name
+        );
+    }
+    let upload_rule = storage
+        .lines()
+        .skip_while(|line| !line.contains("@upload"))
+        .find(|line| line.contains("path_regexp"))
+        .unwrap();
+    for bucket in resources::BUCKETS {
+        assert_eq!(
+            upload_rule.contains(&format!("{}|", bucket.name))
+                || upload_rule.contains(&format!("{})", bucket.name)),
+            bucket.browser_uploads,
+            "{}: {upload_rule}",
+            bucket.name
+        );
+    }
+    assert!(storage.contains("query X-Amz-Signature=*"));
+    assert!(storage.contains("request_header -Authorization"));
+    assert!(storage.contains("request_header -X-Amz-Target"));
+    assert_eq!(storage.matches("respond 403").count(), 2);
+}
+
+#[test]
+fn object_queries_admit_presigned_urls_and_nothing_else() {
+    let object_query = regex::Regex::new(OBJECT_QUERY).unwrap();
+    for allowed in [
+        "",
+        "x-id=GetObject",
+        "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=test%2F20261027%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261027T120000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=abc&x-id=PutObject",
+        "response-content-disposition=attachment",
+        "x-amz-checksum-crc32=AAAAAA%3D%3D&x-amz-sdk-checksum-algorithm=CRC32&X-Amz-Signature=abc",
+    ] {
+        assert!(object_query.is_match(allowed), "{allowed}");
+    }
+    for refused in [
+        "list-type=2",
+        "prefix=",
+        "uploads",
+        "uploads=",
+        "partNumber=1&uploadId=abc",
+        "Action=ListQueues",
+        "x-id=GetObject&Action=ListQueues",
+        "acl",
+    ] {
+        assert!(!object_query.is_match(refused), "{refused}");
+    }
+}
