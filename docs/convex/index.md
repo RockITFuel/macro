@@ -30,6 +30,16 @@ self-hosted Convex deployment, while keeping the existing web frontend.
    same user-facing features (feature map is the parity check).
 9. **Identity:** FusionAuth is replaced by Better Auth with organizations;
    Gmail, Outlook and GitHub keep their own OAuth grants.
+10. **Data:** import tasks, projects and documents from the current Macro
+    instance once; mail and calendars resync from Gmail and Outlook.
+11. **LLM:** all model calls go through CLIProxy (one endpoint, configured per
+    deployment); no provider SDK keys in the backend.
+12. **Transactional email:** templates with `@solid-email/render` (as in
+    project-alpha), sent through Cloudflare Email from a Convex action.
+13. **Projects:** one project concept; the `macro` CLI's `--project` means the
+    same project as the Projects page.
+14. **Later, not v1:** live calls and transcription, spreadsheets,
+    presentations and design files.
 
 ## Platform limits that shape the design
 
