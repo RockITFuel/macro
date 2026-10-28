@@ -82,6 +82,18 @@ pub trait SoupRealtimePublisher: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), Report>> + Send;
 }
 
+/// Tells a patch's recipients' open web clients that an entity changed, so
+/// views without a Soup subscription can reload it. Best effort: failures are
+/// logged, never retried, and never block the patch's publication.
+pub trait SoupRealtimeLiveNotifier: Send + Sync + 'static {
+    /// Notifies `recipients`, who already passed the patch's access expansion.
+    fn notify(
+        &self,
+        recipients: &[MacroUserIdStr<'static>],
+        patch: &Patch<Entity<'static>>,
+    ) -> impl Future<Output = Result<(), Report>> + Send;
+}
+
 /// Finds session entities whose displayed PR metadata depends on a pull request.
 pub trait PullRequestSessions: Send + Sync + 'static {
     /// Return linked sessions; recipients must still be resolved using each session's access.

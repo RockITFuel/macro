@@ -363,6 +363,28 @@ clicks can open a separate split.
 Due-date columns and priority/due-date sorting are not in this version.
 The shared board primitives remain independent of Tasks queries and mutations.
 
+## Live updates
+
+Every open Tasks view follows changes made elsewhere, by a teammate, a bot, an
+agent, or an API key, without a reload: lists and boards (including project
+task lists, saved views and sidebar counts) and an open task's title and
+properties. Creating, renaming, changing a property (status, priority,
+assignees, tags, project), and deleting a task all reach other sessions within
+about a second; comments arrive through the discussion's own message events.
+
+The server sends each user with access a `soup_patch` gateway message naming
+the changed document or initiative (`crates/soup_realtime`); the client
+refetches the mounted Soup lists and that entity's preview, properties and
+metadata (`apps/web/src/lib/queries/soup/live-patches.ts`). Patches arriving
+together share one round of refetches, rounds are at least a second apart, and
+a tab waits for its own pending writes before refetching. A gateway reconnect
+refetches everything, so changes missed while offline also appear.
+
+To verify, open the same Tasks board in two browsers (two users on one team)
+and change a task in one, or through the SDK with an API key: the other board
+moves the card without a reload. A user without access to the task receives no
+`soup_patch` message for it.
+
 ## Cached grouped lists
 
 With GraphQL caching enabled, previously loaded grouped task lists remain usable

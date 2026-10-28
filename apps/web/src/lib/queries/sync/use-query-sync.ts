@@ -41,6 +41,7 @@ import {
   notificationStatusUpdatePayloadSchema,
 } from '@queries/notification/user-notifications';
 import { invalidateAllProperties } from '@queries/properties/tags';
+import { handleSoupPatch } from '@queries/soup/live-patches';
 import { invalidateAllSoup } from '@queries/soup/normalized-cache';
 import {
   handlePullRequestUpdated,
@@ -208,6 +209,10 @@ export function useQuerySync(userId: Accessor<string | undefined>): void {
         fireAndForget(invalidateFavorites(), 'websocket-query-sync');
         invalidateAllProperties();
         invalidateAllSoup();
+      })
+      // A document (tasks included) or initiative changed, by anyone.
+      .with({ type: 'soup_patch' }, () => {
+        withParsedWebsocketPayload(data.type, data.data, handleSoupPatch);
       })
       .with({ type: 'task_duplicate_matches_updated' }, () => {
         withParsedWebsocketPayload(

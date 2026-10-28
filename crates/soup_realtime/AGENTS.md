@@ -5,8 +5,10 @@
 Part of the Soup query feature (Home/Recent/Signal) — keeps cached Soup
 results live by turning document/project/chat/email/channel/property/call Kafka
 events into recipient-targeted Soup patches, and fanning those out to
-instance-local, user-keyed subscriptions. No composition root; starts no
-tasks itself.
+instance-local, user-keyed subscriptions. Document and initiative patches also
+reach the recipients' open web clients as `soup_patch` gateway messages, which
+keep REST-read lists (Tasks, project boards) live. No composition root; starts
+no tasks itself.
 
 ## Start here
 
@@ -20,6 +22,9 @@ tasks itself.
   recipient-targeted patches into per-user subscriptions.
 - `src/outbound/kafka_publisher.rs`, `entity_access.rs`, `agent_sessions.rs`:
   the Kafka and access-expansion adapters.
+- `src/outbound/connection_gateway.rs`: `ConnectionGatewayLiveNotifier`, the
+  `soup_patch` gateway message (handled by
+  `apps/web/src/lib/queries/soup/live-patches.ts`).
 
 ## Scope
 
@@ -33,8 +38,8 @@ tasks itself.
 - Depends on: `macro_event_broker`, `macro_event_topics`, `model-entity`,
   `model_owner`; feature-gated: `channels`, `chat`, `documents`, `email`,
   `call`, `github_pull_requests`, `initiative`, `properties`, `projects`,
-  `system_properties`, `rdkafka` (`consumer`), `agent_session`/`entity_access`
-  (`outbound`).
+  `system_properties`, `rdkafka` (`consumer`), `agent_session`/`connection`/
+  `entity_access` (`outbound`).
 - Used by: `complete_graph`, `graphql_soup`, `work_feed`.
 
 ## Recipes
@@ -55,6 +60,10 @@ tasks itself.
 - Property definition/option lifecycle events are intentionally ignored; they
   don't identify every affected entity.
 - Channel threads use their containing channel as the access source.
+- The `soup_patch` gateway message is best effort: a gateway failure is logged
+  and never fails or retries the patch. It goes to the same access-expanded
+  recipients as the Kafka patch and names only the entity; clients read it
+  back through access-checked endpoints.
 - Only `call.record_imported` patches calls; native call lifecycle events on
   `macro.calls` are ignored. The web cache has no local call projection, so a
   call patch makes mounted lists that can contain calls refetch

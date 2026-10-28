@@ -17,7 +17,7 @@ use tracing::Instrument as _;
 use super::{
     models::{Patch, SoupRealtimeMessage, SoupRealtimePatch},
     ports::{
-        SoupRealtimeConsumer, SoupRealtimePublisher, SoupRealtimeService,
+        SoupRealtimeConsumer, SoupRealtimeLiveNotifier, SoupRealtimePublisher, SoupRealtimeService,
         SoupRealtimeSubscriptionService, UserAccessExpander,
     },
 };
@@ -124,13 +124,14 @@ struct PendingPatch {
     span: tracing::Span,
 }
 
-struct Worker<A, P> {
+struct Worker<A, P, N> {
     access_expander: A,
     publisher: P,
+    live_notifier: N,
     rx: tokio::sync::mpsc::Receiver<PendingPatch>,
 }
 
-impl<A: UserAccessExpander, P: SoupRealtimePublisher> Worker<A, P> {
+impl<A: UserAccessExpander, P: SoupRealtimePublisher, N: SoupRealtimeLiveNotifier> Worker<A, P, N> {
     async fn run(&mut self) {
         while let Some(pending) = self.rx.recv().await {
             let result = self
@@ -154,18 +155,33 @@ impl<A: UserAccessExpander, P: SoupRealtimePublisher> Worker<A, P> {
         users.retain(|user_id| seen.insert(user_id.clone()));
         tracing::Span::current().record("recipient_count", users.len());
 
+        if users.is_empty() {
+            return Ok(());
+        }
+
+        let notify_live_clients = async {
+            // Live clients only refetch; the Soup publication below stays the
+            // delivery guarantee, so a gateway failure must not retry the event.
+            let _ = self
+                .live_notifier
+                .notify(&users, &msg.patch)
+                .await
+                .inspect_err(|error| {
+                    tracing::warn!(error = ?error, "failed to notify live clients of a Soup patch");
+                });
+        };
         let messages = users
-            .into_iter()
-            .map(|user_id| SoupRealtimeMessage::new(user_id, msg.patch.clone()))
+            .iter()
+            .map(|user_id| SoupRealtimeMessage::new(user_id.clone(), msg.patch.clone()))
             .collect::<Vec<_>>();
-        let results = stream::iter(
+        let publish = stream::iter(
             messages
                 .into_iter()
                 .map(|message| self.publisher.publish(message)),
         )
         .buffer_unordered(PUBLISH_CONCURRENCY)
-        .collect::<Vec<_>>()
-        .await;
+        .collect::<Vec<_>>();
+        let ((), results) = futures::join!(notify_live_clients, publish);
 
         let failure_count = results.iter().filter(|result| result.is_err()).count();
         if let Some(error) = results.into_iter().find_map(Result::err) {
@@ -183,9 +199,10 @@ const BACKGROUND_CHANNEL_SIZE: usize = 256;
 
 impl SoupRealtimeServiceImpl {
     /// Creates a realtime Soup service from its outbound capabilities.
-    pub fn new<A: UserAccessExpander, P: SoupRealtimePublisher>(
+    pub fn new<A: UserAccessExpander, P: SoupRealtimePublisher, N: SoupRealtimeLiveNotifier>(
         access_expander: A,
         publisher: P,
+        live_notifier: N,
     ) -> Self {
         let (tx, rx) = tokio::sync::mpsc::channel(BACKGROUND_CHANNEL_SIZE);
 
@@ -194,6 +211,7 @@ impl SoupRealtimeServiceImpl {
                 rx,
                 access_expander,
                 publisher,
+                live_notifier,
             }
             .run()
             .await

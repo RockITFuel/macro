@@ -1,5 +1,8 @@
 //! Outbound adapters used by realtime Soup services.
 
+/// Connection-gateway notifier for REST-reading web clients.
+#[cfg(feature = "outbound")]
+pub mod connection_gateway;
 /// Current entity-access expansion adapter.
 #[cfg(feature = "outbound")]
 pub mod entity_access;
