@@ -125,6 +125,18 @@ The GitHub OAuth app's callback is FusionAuth's
 `<MACRO_FUSIONAUTH_PUBLIC_URL>/oauth2/callback`, so the auth host must be
 routed. A GitHub account without a public email cannot sign up.
 
+Connecting Gmail needs a Google OAuth web client: set `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET_KEY` (the secret itself, `GOCSPX-…`; any other value is
+treated as unset). The kickstart then creates the `google` and `google_gmail`
+identity providers; without them "Connect email → Gmail" answers 404
+`identity provider not found`. Register
+`<MACRO_PUBLIC_ORIGIN>/auth/oauth2/google/callback` (Macro builds the consent
+URL itself) and `<MACRO_FUSIONAUTH_PUBLIC_URL>/oauth2/callback` (Google
+sign-in) as redirect URIs, enable the Gmail and People APIs, and add the
+Gmail scopes to the consent screen; while the app is unverified only its test
+users can consent. Adding the client changes the kickstart, so FusionAuth
+re-inits on the next `stack up`.
+
 Traefik routes the app origin to the instance's proxy port (`--port-base` + 9,
 HTTPS with the development CA, so skip verification) and the auth host, when
 used, to FusionAuth (`--port-base` + 5); see `Port` in
