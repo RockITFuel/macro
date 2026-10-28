@@ -32,6 +32,7 @@ describe('team settings group', () => {
       'General',
       'Members',
       'Connections',
+      'Transcription',
     ]);
   });
 
@@ -46,7 +47,7 @@ describe('team settings group', () => {
     setTeamsQuery({ isSuccess: false, data: undefined });
     const group = teamGroup();
     expect(group().label).toBe('Team');
-    expect(group().items).toHaveLength(3);
+    expect(group().items).toHaveLength(4);
     setTeamsQuery({ isSuccess: true, data: [{ name: 'Acme' }] });
     expect(group().label).toBe('Team · Acme');
   });
