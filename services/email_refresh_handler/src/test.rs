@@ -106,3 +106,17 @@ async fn fetch_inactive_link_ids_respects_threshold_parameters(pool: Pool<Postgr
 
     Ok(())
 }
+
+#[test]
+fn the_hourly_loop_wakes_just_after_the_next_full_hour() {
+    use chrono::TimeZone;
+    let at = |h, m, s| chrono::Utc.with_ymd_and_hms(2026, 10, 28, h, m, s).unwrap();
+    assert_eq!(
+        crate::until_next_hour(at(10, 0, 0)),
+        std::time::Duration::from_secs(3660)
+    );
+    assert_eq!(
+        crate::until_next_hour(at(10, 59, 30)),
+        std::time::Duration::from_secs(90)
+    );
+}

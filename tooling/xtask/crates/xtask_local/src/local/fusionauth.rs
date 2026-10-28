@@ -46,6 +46,7 @@ pub fn write_kickstart(instance: &Instance, env: &BTreeMap<String, String>) -> R
     };
     let google = kickstart::GoogleIdp::from_env(env);
     let github = kickstart::GithubIdp::from_env(env);
+    let microsoft = kickstart::MicrosoftIdp::from_env(env);
     let doc = kickstart::build(
         &kickstart::Redirects::for_env(
             env,
@@ -59,6 +60,7 @@ pub fn write_kickstart(instance: &Instance, env: &BTreeMap<String, String>) -> R
         &read_lambda(RECONCILE_LAMBDA)?,
         google.as_ref(),
         github.as_ref(),
+        microsoft.as_ref(),
     );
     let json = serde_json::to_string_pretty(&doc)? + "\n";
     std::fs::write(dir.join("kickstart.json"), json)

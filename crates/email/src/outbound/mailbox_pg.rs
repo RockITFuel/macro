@@ -44,7 +44,10 @@ impl PgMailboxSync {
     }
 }
 
-fn db_error(_: sqlx::Error) -> MailboxError {
+fn db_error(error: sqlx::Error) -> MailboxError {
+    // The domain error stays opaque; keep the cause so a failing query can be
+    // told apart from the others.
+    tracing::warn!(error = ?error, "mailbox persistence query failed");
     MailboxError::Persistence
 }
 

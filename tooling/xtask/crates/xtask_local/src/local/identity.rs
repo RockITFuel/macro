@@ -74,6 +74,11 @@ pub const RECONCILE_LAMBDA_ID: &str = "66666666-6666-4666-8666-666666666666";
 /// named `github` and has this id, or the two halves address different things.
 pub const GITHUB_IDP_ID: &str = "99999999-9999-4999-8999-999999999999";
 
+/// Fixed id for the `microsoft` (Outlook) OIDC identity provider. Only created
+/// when a Microsoft Entra client is configured (see `kickstart::MicrosoftIdp`).
+/// `authentication_service` resolves it by name, like `google_gmail`.
+pub const MICROSOFT_IDP_ID: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
 /// Local from-address for FusionAuth-sent mail (lands in Mailpit).
 pub const MAIL_FROM: &str = "noreply@macro.local";
 

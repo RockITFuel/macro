@@ -219,3 +219,11 @@ fn a_public_stack_restarts_every_service_by_itself() {
         assert_eq!(service["restart"], "unless-stopped", "{name:?}");
     }
 }
+
+#[test]
+fn the_email_refresher_runs_only_with_a_real_gmail_topic() {
+    let env = |topic: &str| BTreeMap::from([("GMAIL_GCP_QUEUE".to_string(), topic.to_string())]);
+    assert!(runs_email_refresher(&env("projects/macro-selfhost-am/topics/gmail-inbox")));
+    assert!(!runs_email_refresher(&env("gmail-gcp-queue-local")));
+    assert!(!runs_email_refresher(&BTreeMap::new()));
+}

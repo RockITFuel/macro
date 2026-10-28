@@ -94,6 +94,7 @@ pub fn generate(
     let gmail_forwarder = env
         .get("GMAIL_FORWARDER_SA_KEY")
         .is_some_and(|key| !key.trim().is_empty());
+    let email_refresher = runs_email_refresher(env);
     super::tls::issue(instance)?;
     let mut services: IndexMap<String, Option<dct::Service>> = IndexMap::new();
     let mounts = binaries.compose_mounts();
@@ -160,6 +161,32 @@ pub fn generate(
                 )),
                 env_file: Some(dct::StringOrList::Simple("${MACRO_ENV_FILE}".to_string())),
                 networks: net_aliases(&[("services", &["gmail-forwarder"])]),
+                ..Default::default()
+            }),
+        );
+    }
+
+    // Gmail watches expire after seven days. In AWS an hourly Lambda renews
+    // them; a stack whose Gmail watch points at a real Pub/Sub topic runs the
+    // same binary hourly instead, or push notifications stop after a week.
+    if email_refresher && mode.spec().runs_local_infra {
+        services.insert(
+            "email_refresher".to_string(),
+            Some(dct::Service {
+                image: Some(RUNTIME_IMAGE_TAG.to_string()),
+                volumes: mounts.iter().cloned().map(dct::Volumes::Simple).collect(),
+                command: Some(dct::Command::Args(vec![
+                    "/app/out/email_refresh_handler".to_string(),
+                    "--every-hour".to_string(),
+                ])),
+                env_file: Some(dct::StringOrList::Simple("${MACRO_ENV_FILE}".to_string())),
+                // The Lambda's own settings; deletion only runs in production.
+                environment: kv(&[
+                    ("DELETE_UNUSED_AFTER_DAYS", "30"),
+                    ("DELETE_INACTIVE_AFTER_DAYS", "90"),
+                    ("INBOX_HEALTH_POLL_INTERVAL_HOURS", "24"),
+                ]),
+                networks: net_aliases(&[("services", &["email-refresher"])]),
                 ..Default::default()
             }),
         );
@@ -724,4 +751,12 @@ pub fn docker_compose(
     cmd.env("COMPOSE_PROJECT_NAME", instance.project_name());
     cmd.env("MACRO_ENV_FILE", generated_env);
     cmd
+}
+
+/// Whether the stack runs the hourly Gmail watch refresher: only when
+/// `GMAIL_GCP_QUEUE` names a real Pub/Sub topic, since without one no watch
+/// can be registered and there is nothing to renew.
+pub(crate) fn runs_email_refresher(env: &BTreeMap<String, String>) -> bool {
+    env.get("GMAIL_GCP_QUEUE")
+        .is_some_and(|topic| topic.trim().starts_with("projects/"))
 }

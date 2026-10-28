@@ -57,6 +57,7 @@ fn local_compose_flavor(instance: &Instance, mode: Mode, static_frontend: bool) 
         .merged
         .get("GMAIL_FORWARDER_SA_KEY")
         .is_some_and(|key| !key.trim().is_empty());
+    let email_refresher = gen_compose::runs_email_refresher(&resolved.merged);
     gen_compose::generate(mode, instance, &binaries, static_frontend, &resolved.merged)?;
 
     let files = gen_compose::compose_files(instance);
@@ -118,6 +119,19 @@ fn local_compose_flavor(instance: &Instance, mode: Mode, static_frontend: bool) 
             ),
             Some(node) if !has_app_out_mount(node) => {
                 failures.push("gmail_forwarder is missing the /app/out bind mount".into());
+            }
+            Some(_) => {}
+        }
+    }
+
+    if email_refresher {
+        match services.get("email_refresher") {
+            None => failures.push(
+                "email_refresher sidecar is absent although GMAIL_GCP_QUEUE names a Pub/Sub topic"
+                    .into(),
+            ),
+            Some(node) if !has_app_out_mount(node) => {
+                failures.push("email_refresher is missing the /app/out bind mount".into());
             }
             Some(_) => {}
         }

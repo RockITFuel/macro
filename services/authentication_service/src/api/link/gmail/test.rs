@@ -109,3 +109,25 @@ fn authorization_url_requests_incremental_calendar_access() {
         );
     }
 }
+
+#[test]
+fn a_missing_identity_provider_is_not_found_and_other_lookup_failures_are_internal() {
+    assert!(matches!(
+        map_identity_provider_error(FusionAuthClientError::NoIdentityProviderFound),
+        InitGmailLinkError::IdentityProviderNotFound
+    ));
+    assert_eq!(
+        InitGmailLinkError::IdentityProviderNotFound
+            .into_response()
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert!(matches!(
+        map_identity_provider_error(FusionAuthClientError::Generic(
+            fusionauth::error::GenericErrorResponse {
+                message: "connection refused".to_string(),
+            }
+        )),
+        InitGmailLinkError::InternalError(_)
+    ));
+}

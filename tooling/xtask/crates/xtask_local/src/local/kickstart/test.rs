@@ -52,6 +52,7 @@ fn kickstart_without_google_has_no_idp_requests() {
         "function reconcile() {}",
         None,
         None,
+        None,
     );
     let urls: Vec<&str> = doc["requests"]
         .as_array()
@@ -83,6 +84,7 @@ fn kickstart_with_google_adds_lambda_and_both_idps_after_the_application() {
         "function populate() {}",
         "function reconcile() {}",
         Some(&google),
+        None,
         None,
     );
     let requests = doc["requests"].as_array().unwrap();
@@ -139,6 +141,7 @@ fn kickstart_adopts_the_default_tenant() {
         &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
+        None,
         None,
         None,
     );
@@ -226,6 +229,7 @@ fn the_github_idp_id_follows_the_env_the_service_reads() {
         "function reconcile() {}",
         None,
         Some(&github),
+        None,
     );
     assert!(
         doc["requests"]
@@ -260,6 +264,7 @@ fn the_github_idp_is_created_under_both_the_name_and_the_id_the_service_uses() {
         "function reconcile() {}",
         None,
         Some(&github),
+        None,
     );
 
     let requests = doc["requests"].as_array().expect("requests");
@@ -303,6 +308,7 @@ fn kickstart_without_github_creates_no_github_idp() {
         "function reconcile() {}",
         None,
         None,
+        None,
     );
 
     assert!(
@@ -328,6 +334,7 @@ fn authorized_redirects(frontend_port: u16, auth_port: u16, proxy_port: u16) -> 
         &Mail::from_env(&BTreeMap::new()).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
+        None,
         None,
         None,
     );
@@ -387,6 +394,7 @@ fn agent_oauth_redirects_authorize_the_machine_hostname_and_loopback() {
         "function reconcile() {}",
         None,
         None,
+        None,
     );
     let application = doc["requests"]
         .as_array()
@@ -440,6 +448,7 @@ fn kickstart_takes_secrets_from_the_resolved_env() {
         &Mail::from_env(&resolved).unwrap(),
         "function populate() {}",
         "function reconcile() {}",
+        None,
         None,
         None,
     );
@@ -503,6 +512,7 @@ fn a_public_origin_replaces_the_localhost_redirects() {
         "function reconcile() {}",
         None,
         None,
+        None,
     );
     let application = doc["requests"]
         .as_array()
@@ -550,6 +560,7 @@ fn kickstart_sends_login_codes_through_the_configured_smtp_server() {
         "function reconcile() {}",
         None,
         None,
+        None,
     );
     let requests = doc["requests"].as_array().unwrap();
     let tenant = requests
@@ -576,5 +587,74 @@ fn kickstart_sends_login_codes_through_the_configured_smtp_server() {
     assert_eq!(
         template["body"]["emailTemplate"]["fromEmail"],
         "noreply@example.com"
+    );
+}
+
+#[test]
+fn microsoft_idp_requires_the_whole_client() {
+    assert!(MicrosoftIdp::from_env(&env(&[])).is_none());
+    assert!(
+        MicrosoftIdp::from_env(&env(&[
+            ("MICROSOFT_CLIENT_ID", "client"),
+            ("MICROSOFT_CLIENT_SECRET", "secret"),
+            ("MICROSOFT_TENANT_ID", " "),
+        ]))
+        .is_none()
+    );
+    let ok = MicrosoftIdp::from_env(&env(&[
+        ("MICROSOFT_CLIENT_ID", "client"),
+        ("MICROSOFT_CLIENT_SECRET", "secret"),
+        ("MICROSOFT_TENANT_ID", "organizations"),
+    ]))
+    .expect("a complete Entra client must parse");
+    assert_eq!(ok.tenant_id, "organizations");
+}
+
+/// `authentication_service` resolves the Outlook provider by the name
+/// `microsoft`; without it `POST /link/outlook` answers 404.
+#[test]
+fn the_microsoft_idp_is_created_under_the_name_the_service_resolves() {
+    let microsoft = MicrosoftIdp {
+        client_id: "client".to_string(),
+        client_secret: "secret".to_string(),
+        tenant_id: "organizations".to_string(),
+    };
+    let doc = build(
+        &Redirects::for_env(
+            &BTreeMap::new(),
+            3000,
+            8080,
+            vec!["https://localhost:8085".to_string()],
+        ),
+        &Secrets::from_env(&BTreeMap::new()),
+        &Mail::from_env(&BTreeMap::new()).unwrap(),
+        "function populate() {}",
+        "function reconcile() {}",
+        None,
+        None,
+        Some(&microsoft),
+    );
+
+    let provider = doc["requests"]
+        .as_array()
+        .expect("requests")
+        .iter()
+        .find(|request| {
+            request["url"]
+                .as_str()
+                .is_some_and(|url| url.ends_with(identity::MICROSOFT_IDP_ID))
+        })
+        .map(|request| &request["body"]["identityProvider"])
+        .expect("the microsoft identity provider must be created at its fixed id");
+    assert_eq!(provider["name"], "microsoft");
+    assert_eq!(provider["type"], "OpenIDConnect");
+    assert_eq!(provider["oauth2"]["client_id"], "client");
+    assert_eq!(
+        provider["oauth2"]["token_endpoint"],
+        "https://login.microsoftonline.com/organizations/oauth2/v2.0/token"
+    );
+    assert_eq!(
+        provider["applicationConfiguration"][identity::APPLICATION_ID]["enabled"],
+        true
     );
 }

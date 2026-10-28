@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use calendar_events::domain::models::google_calendar_scope_parameter;
+use fusionauth::error::FusionAuthClientError;
 use macro_authorization::{MacroAuthorizationExtractor, UserOrInternal};
 use macro_middleware::tracking::ClientIp;
 use model::response::ErrorResponse;
@@ -69,7 +70,8 @@ pub enum InitGmailLinkError {
     /// Internal error
     #[error("internal error occurred")]
     InternalError(#[from] anyhow::Error),
-    /// The identity provider was not found
+    /// FusionAuth has no `google_gmail` identity provider: the deployment has
+    /// no Google OAuth client configured.
     #[error("identity provider not found")]
     IdentityProviderNotFound,
 }
@@ -80,9 +82,8 @@ impl IntoResponse for InitGmailLinkError {
         let status_code: StatusCode = match &self {
             InitGmailLinkError::TooManyInProgressLinks => StatusCode::TOO_MANY_REQUESTS,
             InitGmailLinkError::PaymentRequired => StatusCode::PAYMENT_REQUIRED,
-            InitGmailLinkError::InternalError(_) | InitGmailLinkError::IdentityProviderNotFound => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            InitGmailLinkError::IdentityProviderNotFound => StatusCode::NOT_FOUND,
+            InitGmailLinkError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (
@@ -121,6 +122,7 @@ pub(crate) struct InitGmailLinkQueryParams {
             (status = 402, body=ErrorResponse),
             (status = 429, body=ErrorResponse),
             (status = 401, body=ErrorResponse),
+            (status = 404, body=ErrorResponse),
             (status = 500, body=ErrorResponse),
         )
     )]
@@ -157,6 +159,14 @@ pub async fn init_gmail_link_handler(
         return Err(InitGmailLinkError::PaymentRequired);
     }
 
+    // Resolve the provider before recording an in-progress link, so a
+    // deployment without one does not fill the user's pending-link quota.
+    let gmail_idp_id = ctx
+        .auth_client
+        .get_identity_provider_id_by_name(GMAIL_IDENTITY_PROVIDER_NAME)
+        .await
+        .map_err(map_identity_provider_error)?;
+
     let count =
         macro_db_client::in_progress_user_link::count_existing_in_progress_user_links_for_user(
             &ctx.db,
@@ -179,12 +189,6 @@ pub async fn init_gmail_link_handler(
         &requested_google_scopes,
     )
     .await?;
-
-    let gmail_idp_id = ctx
-        .auth_client
-        .get_identity_provider_id_by_name(GMAIL_IDENTITY_PROVIDER_NAME)
-        .await
-        .map_err(|_| InitGmailLinkError::IdentityProviderNotFound)?;
 
     // The state is signed and bound to this user, this link, and the Google
     // callback: the callback refuses anything else, so the authorization URL
@@ -212,6 +216,17 @@ pub async fn init_gmail_link_handler(
         authorization_url: authorization_url.to_string(),
         link_id,
     }))
+}
+
+fn map_identity_provider_error(error: FusionAuthClientError) -> InitGmailLinkError {
+    match error {
+        FusionAuthClientError::NoIdentityProviderFound => {
+            InitGmailLinkError::IdentityProviderNotFound
+        }
+        error => InitGmailLinkError::InternalError(
+            anyhow::Error::from(error).context("failed to look up the Gmail identity provider"),
+        ),
+    }
 }
 
 /// The calendar scopes must never ride along on plain Gmail connects: they are
