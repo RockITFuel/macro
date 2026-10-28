@@ -176,6 +176,23 @@ pub struct Config {
     /// share. `just run_local` sets `{project}_services`.
     #[macro_config_default(String::new())]
     pub local_container_network: String,
+    /// Which provider runs sandboxed sessions: empty for Daytona (or local
+    /// Docker with `dev_dangerous_local_containers`), `cua` for Cua Spaces on
+    /// this host. A pilot; the harness must share the host's network
+    /// namespace with the Cua runtime, which publishes on loopback only.
+    #[macro_config_default(String::new())]
+    pub macro_sandbox_runtime: String,
+    /// `cua` binary the Cua provider drives. `CUA_DAEMON` and `CUA_HOME` in
+    /// this service's environment reach it unchanged.
+    #[macro_config_default(String::from("cua"))]
+    pub cua_binary: String,
+    /// Image Cua Spaces are created from: the sandbox image plus
+    /// `cua-spacesd` (`just -f crates/agent_harness/justfile build-cua`).
+    #[macro_config_default(String::from("macro-agent-harness-cua:latest"))]
+    pub cua_sandbox_image: String,
+    /// Cua engine for sandbox Spaces: `runc`, `gvisor`, `firecracker` or `auto`.
+    #[macro_config_default(String::from("runc"))]
+    pub cua_sandbox_runtime: String,
     /// The bot this deployment answers for.
     ///
     /// Still configuration, because `@claude` and `@codex` are separate
