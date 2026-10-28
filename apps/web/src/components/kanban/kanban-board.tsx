@@ -1,5 +1,6 @@
 import { fireAndForget } from '@core/util/fireAndForget';
 import { Key } from '@solid-primitives/keyed';
+import { createElementSize } from '@solid-primitives/resize-observer';
 import { Scroll } from '@ui/components/Scroll';
 import {
   type Accessor,
@@ -16,11 +17,13 @@ import {
 } from 'solid-js';
 import {
   Kanban,
+  type KanbanAppearance,
   KanbanCard,
   KanbanCardInsertion,
   type KanbanDrop,
   type KanbanDropVisual,
   KanbanLane,
+  useKanbanDragSource,
   useKanbanDropTarget,
 } from './kanban';
 import {
@@ -31,9 +34,10 @@ import {
   CardActions,
   CardFields,
   CardHeader,
-  ColumnCount,
+  ColumnCount as ColumnCountContent,
   ColumnLabel,
   ColumnPlaceholder,
+  LandingPlaceholder,
 } from './kanban-board-content';
 import type {
   KanbanBoardColumn,
@@ -46,6 +50,53 @@ import {
 import { createKanbanWheelScroll } from './kanban-wheel-scroll';
 
 const END_COLUMN_KEY = -1;
+const DEFAULT_COLUMN_WIDTH = 336;
+/** Panel columns share the board's width and never get narrower than this. */
+const PANEL_MIN_COLUMN_WIDTH = 256;
+const COLUMN_GAP = { default: 16, panel: 12 } as const;
+const CARD_GAP = { default: 12, panel: 8 } as const;
+const BOARD_PADDING = 16;
+const LANDING_KEY_PREFIX = 'kanban-landing:';
+
+/** Where a card dropped into another column lands among that column's other cards. */
+export type KanbanLandingIndex = (
+  drop: { id: string; fromLane: string; toLane: string },
+  itemIds: readonly string[]
+) => number;
+
+/**
+ * Panel columns fill the viewport evenly, like flex-1 columns with a minimum
+ * width; once they no longer fit, the board scrolls horizontally.
+ */
+export function panelColumnWidth(
+  viewportWidth: number,
+  columnCount: number,
+  gap: number = COLUMN_GAP.panel
+) {
+  if (columnCount <= 0) return PANEL_MIN_COLUMN_WIDTH;
+  const available = viewportWidth - BOARD_PADDING * 2 - gap * (columnCount - 1);
+
+  return Math.max(PANEL_MIN_COLUMN_WIDTH, Math.floor(available / columnCount));
+}
+
+/**
+ * The column's keys with the landing placeholder inserted at `index` (clamped
+ * to the column), so it takes a row of its own in the virtualized list.
+ */
+export function withLandingKey(
+  itemIds: readonly string[],
+  landing: { id: string; index: number } | undefined
+): readonly string[] {
+  if (!landing) return itemIds;
+  const others = itemIds.filter((id) => id !== landing.id);
+  const index = Math.min(Math.max(0, landing.index), others.length);
+
+  return [
+    ...others.slice(0, index),
+    `${LANDING_KEY_PREFIX}${landing.id}`,
+    ...others.slice(index),
+  ];
+}
 
 type Reveal = { toLane: string; scope?: string } & (
   | { kind: 'card'; id: string }
@@ -54,6 +105,8 @@ type Reveal = { toLane: string; scope?: string } & (
 
 type BoardContextValue = {
   columns: Accessor<readonly KanbanBoardColumn[]>;
+  appearance: Accessor<KanbanAppearance>;
+  landingIndex: Accessor<KanbanLandingIndex | undefined>;
   animationScope: Accessor<string | undefined>;
   reveal: Accessor<Reveal | undefined>;
   onRevealed(request: Reveal): void;
@@ -88,6 +141,13 @@ function Root(props: {
   columns: readonly KanbanBoardColumn[];
   animationScope?: string;
   mode?: 'ordered' | 'cross-column';
+  /** The task board's look; other boards keep the default. */
+  appearance?: KanbanAppearance;
+  /**
+   * In cross-column mode, show a card-sized placeholder where a dropped card
+   * will land in the hovered column (a sorted board decides that, not the pointer).
+   */
+  landingIndex?: KanbanLandingIndex;
   canMove?: (drop: Extract<KanbanDrop, { kind: 'card' }>) => boolean;
   onDrop(drop: KanbanDrop): void | boolean | Promise<void | boolean>;
   controlsRef?: (controls: KanbanBoardControls) => void;
@@ -192,6 +252,9 @@ function Root(props: {
 
   const context: BoardContextValue = {
     columns: () => props.columns,
+    appearance: () => props.appearance ?? 'default',
+    landingIndex: () =>
+      props.mode === 'cross-column' ? props.landingIndex : undefined,
     animationScope: () => props.animationScope,
     reveal,
     onRevealed: (request) =>
@@ -260,12 +323,14 @@ function Root(props: {
       ? {
           mode: 'cross-column' as const,
           targetActivationSpeed: 600,
+          liftPreview: props.appearance === 'panel',
           canDropCard,
           onDrop: commitDrop,
         }
       : {
           mode: 'ordered' as const,
           pointerPlacement: true,
+          liftPreview: props.appearance === 'panel',
           canDropCard,
           onDrop: commitDrop,
         };
@@ -288,6 +353,17 @@ function Columns(props: {
   const board = useBoardContext();
   let viewport: HTMLDivElement | undefined;
   let releaseViewport: (() => void) | undefined;
+  const [viewportElement, setViewportElement] = createSignal<HTMLDivElement>();
+  // The appearance is fixed for a board; only panel columns follow the viewport.
+  const viewportSize =
+    board.appearance() === 'panel'
+      ? createElementSize(viewportElement)
+      : undefined;
+  const columnCount = () => board.columns().length + (props.endColumn ? 1 : 0);
+  const columnWidth = () =>
+    viewportSize
+      ? panelColumnWidth(viewportSize.width ?? 0, columnCount())
+      : DEFAULT_COLUMN_WIDTH;
   const scrollSnapshots = new Map<string, KanbanScrollSnapshot>();
   const wheel = createKanbanWheelScroll({
     viewport: () => viewport,
@@ -320,11 +396,12 @@ function Columns(props: {
       return keys;
     },
     getScrollElement: () => viewport,
-    estimateSize: 336,
-    gap: 16,
+    estimateSize: () => columnWidth(),
+    remeasure: columnWidth,
+    gap: COLUMN_GAP[board.appearance()],
     overscan: 1,
-    paddingStart: 16,
-    paddingEnd: 16,
+    paddingStart: BOARD_PADDING,
+    paddingEnd: BOARD_PADDING,
   });
   const virtualItems = createMemo(() =>
     virtualizer.getVirtualItems().map((item) => ({ ...item }))
@@ -349,6 +426,7 @@ function Columns(props: {
       scrollRef={(element) => {
         releaseViewport?.();
         viewport = element;
+        setViewportElement(element);
         releaseViewport = board.attachViewport(element);
       }}
       onWheel={wheel.onWheel}
@@ -414,6 +492,7 @@ function Column(props: {
   onKeyDown?: JSX.EventHandlerUnion<HTMLElement, KeyboardEvent>;
   children: JSX.Element;
 }) {
+  const board = useBoardContext();
   const { column, headerId } = useColumnContext();
   const [hovered, setHovered] = createSignal(false);
 
@@ -425,7 +504,12 @@ function Column(props: {
         canReorder={props.canReorder}
         onKeyDown={props.onKeyDown}
         aria-labelledby={headerId}
-        class="max-h-full min-h-0 w-84"
+        appearance={board.appearance()}
+        class={
+          board.appearance() === 'panel'
+            ? 'h-full min-h-0 w-full'
+            : 'max-h-full min-h-0 w-84'
+        }
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
       >
@@ -436,15 +520,33 @@ function Column(props: {
 }
 
 function Header(props: { children: JSX.Element }) {
+  const board = useBoardContext();
   const { headerId } = useColumnContext();
 
   return (
     <header
       id={headerId}
-      class="flex min-w-0 shrink-0 items-center gap-2 px-2 pt-1 pb-2"
+      class={
+        board.appearance() === 'panel'
+          ? 'flex min-h-9 min-w-0 shrink-0 items-center gap-2 px-2 pt-1.5 pb-1.5'
+          : 'flex min-w-0 shrink-0 items-center gap-2 px-2 pt-1 pb-2'
+      }
     >
       {props.children}
     </header>
+  );
+}
+
+/** The column's card count; panel boards show it in a pill. */
+function ColumnCount(props: { count: number; 'aria-label'?: string }) {
+  const board = useContext(BoardContext);
+
+  return (
+    <ColumnCountContent
+      count={props.count}
+      aria-label={props['aria-label']}
+      pill={board?.appearance() === 'panel'}
+    />
   );
 }
 
@@ -471,20 +573,58 @@ function Cards(props: {
   footer?: JSX.Element;
   /** What the cards are, for each column's accessible name. */
   itemsLabel?: string;
+  /** Shown inside the landing placeholder, such as why the card lands there. */
+  landingLabel?: string;
 }) {
   const board = useBoardContext();
   const lane = useColumnContext();
   const hovered = useContext(ColumnHoverContext);
   if (!hovered) throw new Error('KanbanBoard.Column is required');
+  const target = useKanbanDropTarget();
+  const source = useKanbanDragSource();
   let viewport: HTMLDivElement | undefined;
   const rows = () => lane.column().itemIds;
+  const landing = createMemo(() => {
+    const drop = target();
+    const dragged = source();
+    const landingIndex = board.landingIndex();
+    if (
+      !landingIndex ||
+      !dragged ||
+      drop?.kind !== 'card' ||
+      drop.id !== dragged.id ||
+      drop.toLane !== lane.column().id ||
+      drop.fromLane === drop.toLane
+    )
+      return undefined;
+    const others = rows().filter((id) => id !== drop.id);
+
+    return {
+      id: drop.id,
+      index: landingIndex(drop, others),
+      height: dragged.height,
+    };
+  });
+  const landingKey = () => {
+    const current = landing();
+
+    return current ? `${LANDING_KEY_PREFIX}${current.id}` : undefined;
+  };
+  const keys = createMemo(() => withLandingKey(rows(), landing()));
+  const nextRowId = (id: string) => {
+    const ids = rows();
+    const index = ids.indexOf(id);
+
+    return index < 0 ? undefined : ids[index + 1];
+  };
   const virtualizer = createKanbanVirtualizer({
     direction: 'vertical',
     laneId: () => lane.column().id,
-    keys: rows,
+    keys,
     getScrollElement: () => viewport,
-    estimateSize: 104,
-    gap: 12,
+    estimateSize: (key) =>
+      key === landingKey() ? (landing()?.height ?? 104) : 104,
+    gap: CARD_GAP[board.appearance()],
     overscan: 3,
     // Keep the before-first-card marker inside the lane's scroll clip.
     paddingStart: 8,
@@ -514,7 +654,7 @@ function Cards(props: {
       return;
     }
     if (request.kind !== 'card' || !mountedRows.length) return;
-    const row = rows().indexOf(request.id);
+    const row = keys().indexOf(request.id);
     if (row < 0) return;
     virtualizer.scrollToIndex(row, { align: 'auto' });
     queueMicrotask(() => board.onRevealed(request));
@@ -574,12 +714,28 @@ function Cards(props: {
               )
             );
 
+            if (key.startsWith(LANDING_KEY_PREFIX)) {
+              return (
+                <div
+                  ref={row}
+                  data-index={item().index}
+                  class="absolute left-0 top-0 w-full"
+                  style={{ transform: `translateY(${item().start}px)` }}
+                >
+                  <LandingPlaceholder
+                    height={landing()?.height}
+                    label={props.landingLabel}
+                  />
+                </div>
+              );
+            }
+
             return (
               <div
                 ref={row}
                 data-index={item().index}
                 data-kanban-card-layout
-                data-kanban-next-id={rows()[item().index + 1]}
+                data-kanban-next-id={nextRowId(key)}
                 class="absolute left-0 top-0 w-full"
                 style={{ transform: `translateY(${item().start}px)` }}
               >
@@ -590,7 +746,7 @@ function Cards(props: {
         </Key>
         <KanbanCardInsertion laneId={lane.column().id} />
       </div>
-      <Show when={rows().length === 0}>{props.empty}</Show>
+      <Show when={rows().length === 0 && !landing()}>{props.empty}</Show>
       {props.footer}
     </Scroll>
   );
@@ -600,9 +756,11 @@ function Card(props: {
   id: string;
   canDrag: boolean;
   pending?: boolean;
+  recent?: boolean;
   onClick?: JSX.EventHandler<HTMLElement, MouseEvent>;
   children: JSX.Element;
 }) {
+  const board = useBoardContext();
   const { column } = useColumnContext();
 
   return (
@@ -611,6 +769,8 @@ function Card(props: {
       laneId={column().id}
       canDrag={props.canDrag}
       pending={props.pending}
+      recent={props.recent}
+      appearance={board.appearance()}
       onClick={props.onClick}
     >
       {props.children}

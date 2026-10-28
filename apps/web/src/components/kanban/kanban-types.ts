@@ -15,3 +15,10 @@ export type KanbanCrossColumnDrop = {
   toLane: string;
   beforeId?: string;
 };
+
+/**
+ * How a board is drawn. `panel` is the task board's look (adapted from
+ * Project Alpha's Support board): bordered columns that fill the width, white
+ * cards with a hairline border, and a lifted drag preview.
+ */
+export type KanbanAppearance = 'default' | 'panel';

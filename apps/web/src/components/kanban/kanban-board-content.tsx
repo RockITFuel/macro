@@ -1,5 +1,5 @@
 import { cn } from '@ui';
-import type { JSX } from 'solid-js';
+import { type JSX, Show } from 'solid-js';
 
 export function ColumnLabel(props: { title: string; children: JSX.Element }) {
   return (
@@ -12,14 +12,41 @@ export function ColumnLabel(props: { title: string; children: JSX.Element }) {
   );
 }
 
-export function ColumnCount(props: { count: number; 'aria-label'?: string }) {
+export function ColumnCount(props: {
+  count: number;
+  'aria-label'?: string;
+  pill?: boolean;
+}) {
   return (
     <span
-      class="shrink-0 text-xs tabular-nums text-ink-muted"
+      class={cn(
+        'shrink-0 text-xs tabular-nums text-ink-muted',
+        props.pill && 'rounded-full bg-surface-3 px-2 leading-5'
+      )}
       aria-label={props['aria-label']}
     >
       {props.count}
     </span>
+  );
+}
+
+/**
+ * A card-sized slot where a dragged card will land. Adapted from Project Alpha
+ * packages/ui/src/kanban (© Luka Pelgrom), after the "shadow drop" of
+ * Atlassian's Pragmatic drag and drop board.
+ */
+export function LandingPlaceholder(props: { height?: number; label?: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-kanban-landing=""
+      class="flex items-center justify-center rounded-lg border-2 border-dashed border-accent/40 bg-accent/5 px-3 text-center text-xs text-ink-muted"
+      style={{ height: `${props.height ?? 104}px` }}
+    >
+      <Show when={props.label}>
+        <span class="line-clamp-2">{props.label}</span>
+      </Show>
+    </div>
   );
 }
 

@@ -22,7 +22,10 @@ export type KanbanScrollSnapshot = {
 type KanbanVirtualizerOptions = {
   keys: Accessor<readonly (string | number)[]>;
   getScrollElement: () => HTMLDivElement | undefined;
-  estimateSize: number;
+  /** A fixed size, or one per key (a landing placeholder, a width that follows the viewport). */
+  estimateSize: number | ((key: string | number) => number);
+  /** Re-estimate every item when this changes; measured items are measured again. */
+  remeasure?: Accessor<unknown>;
   gap: number;
   overscan: number;
   paddingStart?: number;
@@ -92,7 +95,13 @@ export function createKanbanVirtualizer(options: KanbanVirtualizerOptions) {
     },
     getScrollElement: () => scrollElement() ?? null,
     horizontal: options.direction === 'horizontal',
-    estimateSize: () => options.estimateSize,
+    get estimateSize() {
+      const keys = options.keys();
+      const size = options.estimateSize;
+
+      return (index: number) =>
+        typeof size === 'number' ? size : size(keys[index]);
+    },
     gap: options.gap,
     overscan: options.overscan,
     paddingStart: options.paddingStart,
@@ -113,6 +122,12 @@ export function createKanbanVirtualizer(options: KanbanVirtualizerOptions) {
       };
     },
   });
+
+  if (options.remeasure) {
+    createEffect(
+      on(options.remeasure, () => virtualizer.measure(), { defer: true })
+    );
+  }
 
   createEffect(
     on(

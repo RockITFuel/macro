@@ -3,8 +3,9 @@ import { fireAndForget } from '@core/util/fireAndForget';
 import PlusIcon from '@icon/system/regular/plus.svg';
 import { SYSTEM_PROPERTY_IDS } from '@property/identifiers';
 import { hasValue } from '@property/utils/typeGuards';
+import { onSoupPatchesApplied } from '@queries/soup/live-patches';
 import { Button } from '@ui/components/Button';
-import { type Accessor, createSignal, For, Show, Suspense } from 'solid-js';
+import { type Accessor, createSignal, Show, Suspense } from 'solid-js';
 import { TaskBoard } from '../components/task-board';
 import {
   TaskBoardColumnIcon,
@@ -18,15 +19,10 @@ import {
   type TaskBoardTask,
   toTaskBoardGrouping,
 } from '../core/task-board';
+import { createRecentTaskChanges } from '../primitives/create-recent-task-changes';
 import { createTaskBoard } from '../primitives/create-task-board';
 import { taskBoardFacetId, taskBoardPropertyId } from '../queries/task-board';
 import { useTasksView } from '../tasks-view-context';
-
-const CARD_PROPERTY_IDS = [
-  SYSTEM_PROPERTY_IDS.PRIORITY,
-  SYSTEM_PROPERTY_IDS.DUE_DATE,
-  SYSTEM_PROPERTY_IDS.PROJECT,
-];
 
 export function TaskBoardView(props: {
   data: TaskBoardData;
@@ -52,20 +48,25 @@ export function TaskBoardView(props: {
     actions: props.data.actions,
     compareTasks: props.data.compareTasks,
   });
+  const recent = createRecentTaskChanges({ subscribe: onSoupPatchesApplied });
+  const move = (request: Parameters<typeof board.move>[0]) => {
+    recent.markLocal(request.id);
+    return board.move(request);
+  };
   const [readError, setReadError] = createSignal<string>();
   const loading = source.boardLoading ?? source.isLoading;
   const sortLabel = () =>
     TASK_SORT_OPTIONS.find(
       (option) => option.id === (state.sort[0]?.id ?? 'updated_at')
     )?.label ?? 'Updated';
-  const cardPropertyIds = () =>
-    CARD_PROPERTY_IDS.filter((id) => {
-      if (id === taskBoardPropertyId(grouping())) {
-        return false;
-      }
+  /** The column already says it, so the card leaves it out. */
+  const shownOnCard = (id: string) => {
+    if (id === taskBoardPropertyId(grouping())) {
+      return false;
+    }
 
-      return id !== SYSTEM_PROPERTY_IDS.PROJECT || projectsEnabled();
-    });
+    return id !== SYSTEM_PROPERTY_IDS.PROJECT || projectsEnabled();
+  };
 
   const revealHiddenColumns = () => {
     const facets = { ...state.facets };
@@ -125,6 +126,7 @@ export function TaskBoardView(props: {
                     throw new Error('Task is no longer editable');
                   }
 
+                  recent.markLocal(task().id);
                   await props.data.saveProperty(task().id, value, apiValues);
                 } catch (error) {
                   toast.failure(
@@ -140,45 +142,67 @@ export function TaskBoardView(props: {
     </Show>
   );
 
+  // Laid out like Project Alpha's Support board ticket card (© Luka Pelgrom):
+  // a meta row, a title of up to three lines, then who and where. Every
+  // property editor stays out of dragging.
   const renderCard = (
     task: Accessor<TaskBoardTask>,
     readOnly: Accessor<boolean>
   ) => (
-    <>
-      <TaskBoard.CardHeader>
+    <div class="flex flex-col gap-1.5 p-2.5 [&_[data-cell-display]]:min-h-6 [&_[data-cell-display]]:p-0 [&_[data-cell-display]]:text-xs">
+      <div class="flex min-h-6 flex-wrap items-center gap-1 text-xs text-ink-muted">
         <div data-kanban-no-drag class="flex shrink-0 items-center">
           {renderProperty(task, readOnly, SYSTEM_PROPERTY_IDS.STATUS, true)}
         </div>
-        <button
-          type="button"
-          class="min-w-0 break-words text-left text-sm font-medium leading-6 text-ink hover:underline"
-          onClick={(event) => {
-            if (event.detail > 1) {
-              return;
-            }
+        <Show when={shownOnCard(SYSTEM_PROPERTY_IDS.PRIORITY)}>
+          <div data-kanban-no-drag class="flex shrink-0 items-center">
+            {renderProperty(task, readOnly, SYSTEM_PROPERTY_IDS.PRIORITY, true)}
+          </div>
+        </Show>
+        <Show when={shownOnCard(SYSTEM_PROPERTY_IDS.DUE_DATE)}>
+          <div data-kanban-no-drag class="ml-auto flex min-w-0 items-center">
+            {renderProperty(
+              task,
+              readOnly,
+              SYSTEM_PROPERTY_IDS.DUE_DATE,
+              false,
+              false
+            )}
+          </div>
+        </Show>
+      </div>
+      <button
+        type="button"
+        class="block min-w-0 text-left text-sm font-semibold leading-5 text-ink hover:underline"
+        onClick={(event) => {
+          if (event.detail > 1) {
+            return;
+          }
 
-            props.onOpen(task(), event);
-          }}
-        >
+          props.onOpen(task(), event);
+        }}
+      >
+        <span class="line-clamp-3 break-words text-pretty">
           {task().name || 'Untitled task'}
-        </button>
+        </span>
+      </button>
+      <div class="flex min-h-6 min-w-0 flex-wrap items-center gap-1 text-xs text-ink-muted">
         <div data-kanban-no-drag class="flex shrink-0 items-center">
           {renderProperty(task, readOnly, SYSTEM_PROPERTY_IDS.ASSIGNEES, true)}
         </div>
-      </TaskBoard.CardHeader>
-      <TaskBoard.CardFields>
-        <div data-kanban-no-drag class="contents">
-          <For each={cardPropertyIds()}>
-            {(id) => {
-              const iconOnly = id === SYSTEM_PROPERTY_IDS.PRIORITY;
-              const includeEmpty = id === SYSTEM_PROPERTY_IDS.PRIORITY;
-
-              return renderProperty(task, readOnly, id, iconOnly, includeEmpty);
-            }}
-          </For>
-        </div>
-      </TaskBoard.CardFields>
-    </>
+        <Show when={shownOnCard(SYSTEM_PROPERTY_IDS.PROJECT)}>
+          <div data-kanban-no-drag class="flex min-w-0 items-center">
+            {renderProperty(
+              task,
+              readOnly,
+              SYSTEM_PROPERTY_IDS.PROJECT,
+              false,
+              false
+            )}
+          </div>
+        </Show>
+      </div>
+    </div>
   );
 
   return (
@@ -225,9 +249,11 @@ export function TaskBoardView(props: {
       <TaskBoard.Root
         ref={props.ref}
         animationScope={scope()}
+        appearance="panel"
+        compareTasks={props.data.compareTasks}
         columns={board.columns()}
         canMove={board.canMove}
-        onMove={board.move}
+        onMove={move}
       >
         <TaskBoard.Columns
           endColumn={
@@ -265,10 +291,8 @@ export function TaskBoardView(props: {
                   </div>
                 </Show>
               </TaskBoard.Header>
-              <TaskBoard.DropOverlay>
-                Board sorted by {sortLabel()}
-              </TaskBoard.DropOverlay>
               <TaskBoard.Cards
+                landingLabel={`Sorted by ${sortLabel()}`}
                 empty={
                   <p class="px-2 py-6 text-center text-xs text-ink-extra-muted">
                     No matching tasks
@@ -303,6 +327,7 @@ export function TaskBoardView(props: {
                       task={task()}
                       canDrag={!readOnly()}
                       pending={board.pending(task().id)}
+                      recent={recent.isRecent(task().id)}
                       onOpen={props.onOpen}
                     >
                       {renderCard(task, readOnly)}

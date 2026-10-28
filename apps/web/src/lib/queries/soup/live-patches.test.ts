@@ -25,6 +25,7 @@ import { propertiesKeys } from '../properties/keys';
 import { entityKeys } from '../storage/keys';
 import {
   handleSoupPatch,
+  onSoupPatchesApplied,
   resetSoupPatches,
   SOUP_PATCH_COALESCE_MS,
   SOUP_PATCH_MIN_INTERVAL_MS,
@@ -129,6 +130,32 @@ describe('soup_patch gateway messages', () => {
     await vi.advanceTimersByTimeAsync(SOUP_PATCH_COALESCE_MS);
     expect(soupCache.refetchSoupEntity).toHaveBeenCalledWith(TASK, 'document');
     expect(invalidated(taskProperties)).toBe(true);
+  });
+
+  it('tell listeners which entities changed once the refetches settled', async () => {
+    const { promise: refetched, resolve: settleRefetch } =
+      Promise.withResolvers<void>();
+    graphqlLists.refreshActiveGraphqlSoupQueries.mockImplementationOnce(
+      () => refetched
+    );
+    const listener = vi.fn();
+    const stop = onSoupPatchesApplied(listener);
+
+    handleSoupPatch(patch(TASK));
+    handleSoupPatch(patch(OTHER_TASK, 'deleted'));
+    await vi.advanceTimersByTimeAsync(SOUP_PATCH_COALESCE_MS);
+    // The refetch starts without waiting for anyone listening.
+    expect(soupCache.refetchSoupEntity).toHaveBeenCalledWith(TASK, 'document');
+    expect(listener).not.toHaveBeenCalled();
+
+    settleRefetch();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(listener).toHaveBeenCalledExactlyOnceWith([TASK]);
+
+    stop();
+    handleSoupPatch(patch(TASK));
+    await vi.advanceTimersByTimeAsync(SOUP_PATCH_MIN_INTERVAL_MS);
+    expect(listener).toHaveBeenCalledOnce();
   });
 
   it('ignore malformed messages', async () => {

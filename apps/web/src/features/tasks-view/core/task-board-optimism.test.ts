@@ -4,6 +4,7 @@ import {
   movedTask,
   placementMatches,
   projectTaskBoardPlacements,
+  taskBoardLandingIndex,
 } from './task-board-optimism';
 
 const task: TaskBoardTask = {
@@ -119,5 +120,59 @@ describe('optimistic task placements', () => {
     expect(result[0].count).toBe(0);
     expect(result[1].tasks).toEqual([placement.task]);
     expect(result[1].count).toBe(25);
+  });
+});
+
+describe('task board landing index', () => {
+  const rank = new Map([
+    ['a', 1],
+    ['b', 2],
+    ['c', 3],
+    ['d', 4],
+  ]);
+  const compare = (left: string, right: string) =>
+    (rank.get(left) ?? Infinity) - (rank.get(right) ?? Infinity);
+
+  it.each([
+    ['before every other task', 'a', ['b', 'c'], 0],
+    ['between two tasks', 'b', ['a', 'c', 'd'], 1],
+    ['after every other task', 'd', ['a', 'b'], 2],
+    ['in an empty column', 'b', [], 0],
+    ['at the end without a rank of its own', 'unknown', ['a', 'b'], 2],
+  ])('lands %s', (_case, id, others, expected) => {
+    expect(taskBoardLandingIndex(others, id, compare)).toBe(expected);
+  });
+
+  it('lands at the end when the host has no order', () => {
+    expect(taskBoardLandingIndex(['a', 'b'], 'c')).toBe(2);
+  });
+
+  it('matches where the optimistic placement inserts the card', () => {
+    const moving = { ...task, id: 'b', statusId: 'done' };
+    const done = column('done', [
+      { ...task, id: 'a', statusId: 'done' },
+      { ...task, id: 'c', statusId: 'done' },
+      { ...task, id: 'd', statusId: 'done' },
+    ]);
+    const [projected] = projectTaskBoardPlacements(
+      [done],
+      [
+        {
+          task: moving,
+          previousGroupKeys: ['todo'],
+          grouping: 'status',
+          scope: 'scope',
+          confirmed: false,
+        },
+      ],
+      compare
+    );
+    const index = taskBoardLandingIndex(
+      done.tasks.map((item) => item.id),
+      'b',
+      compare
+    );
+
+    expect(projected.tasks[index].id).toBe('b');
   });
 });

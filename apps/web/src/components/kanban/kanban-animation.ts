@@ -25,11 +25,11 @@ type Snapshot = KanbanAnimationItem & {
   dragOrigin?: boolean;
 };
 
-const DURATION = 200;
-const TIMING: KeyframeAnimationOptions = {
-  duration: DURATION,
-  easing: 'cubic-bezier(0.2, 0, 0, 1)',
-};
+// Timings adapted from Project Alpha packages/ui/src/kanban (© Luka Pelgrom):
+// cards make room in 0.2s, and a dropped card lands in 0.22s, on one ease-out curve.
+const EASING = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+const REFLOW: KeyframeAnimationOptions = { duration: 200, easing: EASING };
+const LANDING: KeyframeAnimationOptions = { duration: 220, easing: EASING };
 
 /** Observe layout during a drag hover or host-owned move, never ordinary paging. */
 export function createKanbanAnimation(options: {
@@ -177,14 +177,15 @@ export function createKanbanAnimation(options: {
   function animate(
     element: HTMLElement,
     keyframes: Keyframe[],
-    done?: () => void
+    done?: () => void,
+    timing: KeyframeAnimationOptions = REFLOW
   ) {
     if (!element.animate) {
       done?.();
       return;
     }
 
-    const animation = element.animate(keyframes, TIMING);
+    const animation = element.animate(keyframes, timing);
     animations.add(animation);
     activeElements.set(element, animation);
     const finish = async () => {
@@ -257,10 +258,16 @@ export function createKanbanAnimation(options: {
         if (flights.get(to.key) === ghost) {
           flights.delete(to.key);
         }
-      }
+      },
+      LANDING
     );
     // Cards hand off at landing instead of showing two cross-fading copies.
-    animate(to.element, [{ opacity: 0 }, { opacity: placeholder ? 1 : 0 }]);
+    animate(
+      to.element,
+      [{ opacity: 0 }, { opacity: placeholder ? 1 : 0 }],
+      undefined,
+      LANDING
+    );
   }
 
   function play() {
