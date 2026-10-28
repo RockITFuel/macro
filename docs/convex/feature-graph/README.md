@@ -14,10 +14,10 @@ domain before porting it; the Rust side is a reference, not a target.
 | [Work](work.md) | 8 | 6 | 2 | 0 | 0 |
 | [Communication](communication.md) | 10 | 8 | 0 | 2 | 0 |
 | [Email](email.md) | 8 | 0 | 7 | 1 | 0 |
-| [Calendar and calls](calendar.md) | 10 | 5 | 3 | 2 | 0 |
+| [Calendar and calls](calendar.md) | 10 | 3 | 3 | 4 | 0 |
 | [AI and agents](ai.md) | 11 | 7 | 1 | 2 | 1 |
 | [Files and integrations](integrations.md) | 10 | 2 | 6 | 2 | 0 |
-| **Total** | **77** | **40** | **20** | **14** | **3** |
+| **Total** | **77** | **38** | **20** | **16** | **3** |
 
 ## Cross-domain shape
 

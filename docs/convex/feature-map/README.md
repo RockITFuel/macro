@@ -114,8 +114,8 @@ Scope is the Convex v1 scope from the feature graph: `v1` core, `v1-integration`
 - [Calendar views](calendar/calendar-views.md) · `v1`
 - [Meeting notes](calendar/meeting-notes.md) · `v1`
 - [Scheduling and booking pages](calendar/scheduling.md) · `v1`
-- [Calls list, recordings and transcripts](calendar/calls-recordings.md) · `v1`
-- [Live calls and meeting links](calendar/live-calls.md) · `v1`
+- [Calls list, recordings and transcripts](calendar/calls-recordings.md) · `later`
+- [Live calls and meeting links](calendar/live-calls.md) · `later`
 - [Calendar connections and calendar settings](calendar/calendar-connections.md) · `v1-integration`
 - [Event create, edit and details](calendar/event-editing.md) · `v1-integration`
 - [Calendar invitations in email](calendar/invitations-in-email.md) · `v1-integration`
