@@ -8729,8 +8729,6 @@ dependencies = [
  "lru 0.16.4",
  "macro_authorization",
  "macro_db_migrator",
- "macro_env",
- "macro_env_var",
  "macro_service_urls",
  "macro_user_id",
  "macro_uuid",
@@ -10815,7 +10813,7 @@ name = "invite_email"
 version = "0.1.0"
 dependencies = [
  "askama",
- "macro_env",
+ "macro_service_urls",
  "macro_user_id",
  "model-entity",
  "notification",

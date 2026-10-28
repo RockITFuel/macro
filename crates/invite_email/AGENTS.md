@@ -29,7 +29,8 @@ invites, and the colleague-joined email.
 ## Boundaries
 
 - Depends on: `notification` (for `Notification`, `NotificationExtEmail`
-  types), `macro_env`, `macro_user_id`, `model-entity`.
+  types), `macro_service_urls` (`AppServiceUrl`, the origin every link
+  opens), `macro_user_id`, `model-entity`.
 - Used by: `model_notifications`, `call`, `referral`.
 
 ## Recipes

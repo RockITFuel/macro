@@ -329,18 +329,22 @@ fn referral_url_does_not_panic() {
 }
 
 #[test]
-fn get_url_all_environments() {
-    let code = ReferralCode("CODE".to_string());
-    let cases = [
-        (Environment::Production, "macro.com"),
-        (Environment::Develop, "dev.macro.com"),
-        (Environment::Local, "localhost"),
-    ];
-    for (env, expected_host) in cases {
-        let url = get_url(env, &code);
-        assert_eq!(url.host_str().unwrap(), expected_host);
-        assert!(url.as_str().contains("referral_code=CODE"));
-        assert_eq!(url.path(), "/app/signup");
+fn links_open_the_web_app_at_its_origin() {
+    for origin in ["https://macro.com", "https://macro.example.com/"] {
+        let origin = Url::parse(origin).unwrap();
+        let host = origin.host_str().unwrap().to_string();
+
+        let referral = get_url(origin.clone(), &ReferralCode("CODE".to_string()));
+        assert_eq!(
+            referral.as_str(),
+            format!("https://{host}/app/signup?referral_code=CODE")
+        );
+
+        let invite = make_team_invite(InviteePlan::Free).invite_url_on(origin);
+        assert_eq!(
+            invite.as_str(),
+            format!("https://{host}/app/team-invite?id=00000000-0000-0000-0000-00000000000a")
+        );
     }
 }
 
