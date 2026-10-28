@@ -147,6 +147,14 @@ run `just stack update --instance e2e --no-doppler --env-file … --binaries-dir
 <new dir>`: the same path counts as unchanged and nothing restarts. `stack up`
 wipes the instance's data; `stack update` keeps it.
 
+If the host was overloaded (a load spike during a build), the instance's
+single-node Kafka can be fenced and the services' Kafka consumers then drop
+out of their groups without rejoining: live task updates, activity and search
+indexing stop silently. `docker exec <instance>-kafka-1
+/opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server kafka:29092 --list
+--state` shows them `Empty`; restart the owning service container (for
+`soup-realtime`, `document_storage_service`).
+
 Bring your own agent: build `cargo build -p coding_agent_worker`, write a
 `macrod.toml` whose `[macro]` points at the instance's direct ports
 (`api_url = "http://localhost:<port-base + 26>"`, `storage_url =
