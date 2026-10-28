@@ -7,7 +7,7 @@ mod test;
 use anyhow::Context;
 use aws_lambda_events::event::eventbridge::EventBridgeEvent;
 use config::Config;
-use handler::handler;
+use handler::{handler, refresh};
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use macro_entrypoint::MacroEntrypoint;
 use sqlx::postgres::PgPoolOptions;
@@ -39,6 +39,17 @@ async fn main() -> Result<(), Error> {
         config,
     };
 
+    // Outside AWS (the self-hosted stack's `email_refresher` sidecar) there is no
+    // EventBridge schedule: run the same pass at the top of every hour.
+    if std::env::args().any(|arg| arg == "--every-hour") {
+        loop {
+            if let Err(error) = refresh(&ctx).await {
+                tracing::error!(error = ?error, "email refresh pass failed");
+            }
+            tokio::time::sleep(until_next_hour(chrono::Utc::now())).await;
+        }
+    }
+
     let func = service_fn(move |event: LambdaEvent<EventBridgeEvent>| {
         let ctx = ctx.clone();
 
@@ -46,4 +57,11 @@ async fn main() -> Result<(), Error> {
     });
 
     run(func).await
+}
+
+/// Time left until a minute past the next full hour. The handler buckets links
+/// by hour of day, so each pass must land inside a distinct hour.
+fn until_next_hour(now: chrono::DateTime<chrono::Utc>) -> std::time::Duration {
+    let into_hour = now.timestamp().rem_euclid(3600) as u64;
+    std::time::Duration::from_secs(3600 - into_hour + 60)
 }

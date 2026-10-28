@@ -133,9 +133,22 @@ identity providers; without them "Connect email → Gmail" answers 404
 `<MACRO_PUBLIC_ORIGIN>/auth/oauth2/google/callback` (Macro builds the consent
 URL itself) and `<MACRO_FUSIONAUTH_PUBLIC_URL>/oauth2/callback` (Google
 sign-in) as redirect URIs, enable the Gmail and People APIs, and add the
-Gmail scopes to the consent screen; while the app is unverified only its test
-users can consent. On a running instance, see the note under Outlook on adding
-identity providers without a wipe.
+Gmail scopes to the consent screen. An Internal consent screen in a Workspace
+organization admits every account of that domain without verification; an
+External one in testing mode only its test users.
+
+Linking also registers a Gmail watch, and fails if that fails, so Gmail needs
+a Pub/Sub topic: set `GMAIL_GCP_QUEUE` to `projects/<project>/topics/<topic>`,
+grant `gmail-api-push@system.gserviceaccount.com` `roles/pubsub.publisher` on
+the topic (an organization that restricts IAM members by domain needs a
+project-level exception to `iam.allowedPolicyMemberDomains`), and add a push
+subscription to `<MACRO_PUBLIC_ORIGIN>/email/gmail/webhook` with OIDC
+authentication and audience `macro-gmail-webhook`. With a topic set, the stack
+runs the `email_refresher` sidecar, which renews the watches hourly (they
+expire after seven days). Ours: project `macro-selfhost-am` (organization
+alphamonitoring.app), topic `gmail-inbox`, subscription `gmail-inbox-push`,
+OAuth client in 1Password vault Credentials. On a running instance, see the
+note under Outlook on adding identity providers without a wipe.
 
 Traefik routes the app origin to the instance's proxy port (`--port-base` + 9,
 HTTPS with the development CA, so skip verification) and the auth host, when
@@ -211,8 +224,11 @@ redirect URI on `macro.alphamonitoring.app` and the delegated scopes in
 `MICROSOFT_TOKEN_KMS_KEY_ID` (a LocalStack KMS key; not needed with
 `MACRO_LOCAL_ENCRYPTION_KEY`) on the authentication service. Secrets go in
 1Password, vault Alpha. New Outlook connections also need
-`OUTLOOK_CONNECTIONS_ENABLED=true`; without it the Connect email dialog offers
-Gmail only. With the three `MICROSOFT_*` values the kickstart creates the
+`OUTLOOK_CONNECTIONS_ENABLED=true` (without it the Connect email dialog offers
+Gmail only), mail import `OUTLOOK_SYNC_ENABLED=true`, and sending, moving and
+flagging `OUTLOOK_WRITES_ENABLED=true`. Without an https email-service URL
+there are no Graph webhooks: Outlook polls every two minutes. Ours: a single
+tenant app in the Architechs tenant, `MICROSOFT_TENANT_ID` its tenant id. With the three `MICROSOFT_*` values the kickstart creates the
 `microsoft` identity provider the link is recorded under.
 
 The kickstart only runs on an empty FusionAuth, and `stack up` wipes the

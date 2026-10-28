@@ -203,6 +203,20 @@ pub const RUST_SERVICES: &[RustService] = &[
         no_default_features: false,
     },
     RustService {
+        // Not a service: the Gmail watch refresher that runs as a Lambda in
+        // AWS, shipped into /app/out so the `email_refresher` sidecar (a
+        // bespoke gen_compose block, hence no modes) can run it hourly.
+        compose_name: "email_refresher",
+        cargo_bin: "email_refresh_handler",
+        package: "email_refresh_handler",
+        host_port: None,
+        path_prefix: None,
+        is_websocket: false,
+        modes: &[],
+        opt_in: false,
+        no_default_features: false,
+    },
+    RustService {
         compose_name: "calendar_service",
         cargo_bin: "calendar_service",
         package: "calendar_service",

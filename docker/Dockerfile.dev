@@ -35,6 +35,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=shared \
         --bin agent_harness_service \
         --bin calendar_service \
         --bin seed_cli \
+        --bin email_refresh_handler \
     && cargo build -j "${jobs}" -p search_processing_service --no-default-features --features processing,service \
         --bin search_processing_service \
     && mkdir -p /app/out \
@@ -52,7 +53,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=shared \
     && cp /app/target/debug/agent_harness_service /app/out/ \
     && cp /app/target/debug/calendar_service /app/out/ \
     && cp /app/target/debug/search_processing_service /app/out/ \
-    && cp /app/target/debug/seed_cli /app/out/
+    && cp /app/target/debug/seed_cli /app/out/ \
+    && cp /app/target/debug/email_refresh_handler /app/out/
 
 # Base runtime image
 FROM debian:trixie-slim AS base

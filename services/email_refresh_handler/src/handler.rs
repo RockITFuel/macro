@@ -23,14 +23,21 @@ pub async fn handler(
     ctx: context::Context,
     _event: LambdaEvent<EventBridgeEvent>,
 ) -> Result<(), Error> {
+    refresh(&ctx).await
+}
+
+/// One hourly pass: renew this hour's slice of Gmail watches, probe grant
+/// health, and (in production, once a night) delete stale links.
+#[tracing::instrument(name = "email.refresh_links", skip(ctx))]
+pub async fn refresh(ctx: &context::Context) -> Result<(), Error> {
     tokio::try_join!(
-        send_refresh_messages(&ctx),
-        send_health_check_messages(&ctx)
+        send_refresh_messages(ctx),
+        send_health_check_messages(ctx)
     )?;
 
     // only send delete messages once daily, during the night
     if matches!(ctx.config.environment, Environment::Production) && chrono::Utc::now().hour() == 5 {
-        send_delete_messages(&ctx).await?;
+        send_delete_messages(ctx).await?;
     }
 
     Ok(())
