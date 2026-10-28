@@ -37,6 +37,22 @@ import { DocumentVersion } from './version';
 
 type DocumentDetail = GetDocumentResponses[200]['data']['documentMetadata'];
 
+/** A native markdown document's markdown and the version it was read at. */
+export interface DocumentMarkdown {
+  /** The content, without a trailing newline. */
+  markdown: string;
+  /** Opaque version; pass it as `baseVersionId` to refuse stale writes. */
+  versionId: string;
+}
+
+/** The outcome of {@link Document.setMarkdown}. */
+export interface DocumentMarkdownWrite {
+  /** The version after the write. */
+  versionId: string;
+  /** False when the document already held the markdown. */
+  changed: boolean;
+}
+
 /** Thread reads in flight at once while `comments()` expands a document's roots. */
 const THREAD_FETCH_CONCURRENCY = 8;
 
@@ -339,6 +355,37 @@ export class Document
         message: 'failed to download document content',
       });
     return res.text();
+  }
+
+  /**
+   * A native markdown document's exact markdown, with the version it was read
+   * at. Pass `versionId` to {@link setMarkdown} as `baseVersionId` to refuse
+   * the write if anyone edited the document in between.
+   */
+  async markdown(): Promise<DocumentMarkdown> {
+    return unwrap(
+      await this.client.storage.getDocumentMarkdown({
+        path: { document_id: this.id },
+      }),
+    );
+  }
+
+  /**
+   * Replace a native markdown document's content with exactly `markdown`, as a
+   * collaborative edit that open editors receive live. With `baseVersionId`,
+   * a document edited since that version fails with a 409 {@link MacroApiError}.
+   * Writing the markdown the document already holds changes nothing.
+   */
+  async setMarkdown(
+    markdown: string,
+    opts: { baseVersionId?: string } = {},
+  ): Promise<DocumentMarkdownWrite> {
+    return unwrap(
+      await this.client.storage.setDocumentMarkdown({
+        path: { document_id: this.id },
+        body: { markdown, baseVersionId: opts.baseVersionId },
+      }),
+    );
   }
 
   /** Rename the document. */

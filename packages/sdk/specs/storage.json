@@ -10846,6 +10846,164 @@
         }
       }
     },
+    "/documents/{document_id}/markdown": {
+      "get": {
+        "tags": ["document"],
+        "summary": "Read a native markdown document's markdown with its version.",
+        "operationId": "get_document_markdown",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "description": "Document ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentMarkdownResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["document"],
+        "summary": "Replace a native markdown document's content with exactly the given\nmarkdown, as a collaborative edit that open editors receive live.",
+        "operationId": "set_document_markdown",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "description": "Document ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDocumentMarkdownRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetDocumentMarkdownResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The document changed since baseVersionId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/documents/{document_id}/permanent": {
       "delete": {
         "tags": ["document"],
@@ -26879,6 +27037,21 @@
           }
         }
       },
+      "DocumentMarkdownResponse": {
+        "type": "object",
+        "description": "A document's markdown and the version it was read at.",
+        "required": ["markdown", "versionId"],
+        "properties": {
+          "markdown": {
+            "type": "string",
+            "description": "The document's content as markdown, without a trailing newline."
+          },
+          "versionId": {
+            "type": "string",
+            "description": "Opaque version of the content; pass it as `baseVersionId` to write\nonly if nobody edited the document since."
+          }
+        }
+      },
       "DocumentMetadata": {
         "type": "object",
         "required": [
@@ -37319,6 +37492,37 @@
                 "description": "New level, or removal."
               }
             ]
+          }
+        }
+      },
+      "SetDocumentMarkdownRequest": {
+        "type": "object",
+        "description": "Replace a document's content with exactly this markdown.",
+        "required": ["markdown"],
+        "properties": {
+          "baseVersionId": {
+            "type": ["string", "null"],
+            "description": "Write only if the document is still at this version (409 otherwise)."
+          },
+          "markdown": {
+            "type": "string",
+            "description": "The new content."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetDocumentMarkdownResponse": {
+        "type": "object",
+        "description": "The result of a markdown write.",
+        "required": ["versionId", "changed"],
+        "properties": {
+          "changed": {
+            "type": "boolean",
+            "description": "False when the document already held this markdown and nothing changed."
+          },
+          "versionId": {
+            "type": "string",
+            "description": "The version after the write."
           }
         }
       },

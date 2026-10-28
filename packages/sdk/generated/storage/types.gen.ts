@@ -5528,6 +5528,21 @@ export type DocumentInteractionMetadata = {
     reason: InteractionReason;
 };
 
+/**
+ * A document's markdown and the version it was read at.
+ */
+export type DocumentMarkdownResponse = {
+    /**
+     * The document's content as markdown, without a trailing newline.
+     */
+    markdown: string;
+    /**
+     * Opaque version of the content; pass it as `baseVersionId` to write
+     * only if nobody edited the document since.
+     */
+    versionId: string;
+};
+
 export type DocumentMetadata = {
     /**
      * The id of the document this document branched from
@@ -11762,6 +11777,34 @@ export type SetContactNameRequest = {
  */
 export type SetDirectAccess = {
     accessLevel?: null | AccessLevel;
+};
+
+/**
+ * Replace a document's content with exactly this markdown.
+ */
+export type SetDocumentMarkdownRequest = {
+    /**
+     * Write only if the document is still at this version (409 otherwise).
+     */
+    baseVersionId?: string | null;
+    /**
+     * The new content.
+     */
+    markdown: string;
+};
+
+/**
+ * The result of a markdown write.
+ */
+export type SetDocumentMarkdownResponse = {
+    /**
+     * False when the document already held this markdown and nothing changed.
+     */
+    changed: boolean;
+    /**
+     * The version after the write.
+     */
+    versionId: string;
 };
 
 /**
@@ -20048,6 +20091,64 @@ export type GetDocumentLocationV3Responses = {
 };
 
 export type GetDocumentLocationV3Response = GetDocumentLocationV3Responses[keyof GetDocumentLocationV3Responses];
+
+export type GetDocumentMarkdownData = {
+    body?: never;
+    path: {
+        /**
+         * Document ID
+         */
+        document_id: string;
+    };
+    query?: never;
+    url: '/documents/{document_id}/markdown';
+};
+
+export type GetDocumentMarkdownErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    404: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type GetDocumentMarkdownError = GetDocumentMarkdownErrors[keyof GetDocumentMarkdownErrors];
+
+export type GetDocumentMarkdownResponses = {
+    200: DocumentMarkdownResponse;
+};
+
+export type GetDocumentMarkdownResponse = GetDocumentMarkdownResponses[keyof GetDocumentMarkdownResponses];
+
+export type SetDocumentMarkdownData = {
+    body: SetDocumentMarkdownRequest;
+    path: {
+        /**
+         * Document ID
+         */
+        document_id: string;
+    };
+    query?: never;
+    url: '/documents/{document_id}/markdown';
+};
+
+export type SetDocumentMarkdownErrors = {
+    400: ErrorResponse;
+    401: ErrorResponse;
+    404: ErrorResponse;
+    /**
+     * The document changed since baseVersionId
+     */
+    409: ErrorResponse;
+    500: ErrorResponse;
+};
+
+export type SetDocumentMarkdownError = SetDocumentMarkdownErrors[keyof SetDocumentMarkdownErrors];
+
+export type SetDocumentMarkdownResponses = {
+    200: SetDocumentMarkdownResponse;
+};
+
+export type SetDocumentMarkdownResponse2 = SetDocumentMarkdownResponses[keyof SetDocumentMarkdownResponses];
 
 export type PermanentlyDeleteDocumentData = {
     body?: never;

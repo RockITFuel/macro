@@ -75,3 +75,7 @@ pub mod purge;
 /// Current Markdown and extracted text, authorized by document view capability.
 #[cfg(feature = "ports")]
 pub mod text;
+
+/// Exact markdown reads and writes through collaborative state.
+#[cfg(feature = "ports")]
+pub mod markdown_replace;

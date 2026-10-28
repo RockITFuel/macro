@@ -266,6 +266,10 @@ export type {
   QueryTableVersion,
 } from './entities/databases/query';
 export { DocumentAnchor } from './entities/documents/anchor';
+export type {
+  DocumentMarkdown,
+  DocumentMarkdownWrite,
+} from './entities/documents/document';
 export { DocumentVersion } from './entities/documents/version';
 export {
   DraftAttachment,
