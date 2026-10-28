@@ -844,6 +844,27 @@
           }
         }
       },
+      "BotActivity": {
+        "type": "object",
+        "description": "Lets a filter match changes made by agents and bots, within limits that\nstop bots from triggering each other forever. A routine never runs for\nactivity its own runs caused.",
+        "required": ["max_hops", "max_runs_per_hour"],
+        "properties": {
+          "max_hops": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Bot hand-offs allowed since the last human action, 1 to 5 (default 3).\nA run started by a bot that a person started is hop 1.",
+            "maximum": 5,
+            "minimum": 1
+          },
+          "max_runs_per_hour": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Runs bot activity may start per hour, 1 to 60 (default 10).",
+            "maximum": 60,
+            "minimum": 1
+          }
+        }
+      },
       "ConditionResult": {
         "oneOf": [
           {
@@ -896,6 +917,17 @@
         "description": "An event name AND an entity ID must match within the same filter. A\ncondition further requires the event's content to answer it with yes.",
         "required": ["events"],
         "properties": {
+          "bot_activity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BotActivity",
+                "description": "Also match changes made by agents and bots. Omitted, only people's\nchanges, inbound email and calls match."
+              }
+            ]
+          },
           "condition": {
             "type": ["string", "null"],
             "description": "Yes/no question about the triggering content, e.g. \"Is this email an\ninvoice?\". The routine runs only when the answer is yes.",

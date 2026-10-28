@@ -1516,6 +1516,16 @@ async fn run() -> anyhow::Result<()> {
             MacroAuthorizationState::new(Arc::new(authorization_service.clone())),
         ),
     );
+    let session_wait = agent_session::inbound::axum_router::wait::agent_session_wait_router(
+        AgentSessionRouterState::new(
+            agent_session::domain::wait::SessionWaiter::new(
+                session_repo.clone(),
+                agent_session::outbound::turn_signals::spawn_pg_turn_signals(pool.clone()),
+            ),
+            entity_access.clone(),
+            MacroAuthorizationState::new(Arc::new(authorization_service.clone())),
+        ),
+    );
     let conversations = agent_harness::inbound::conversations::agent_conversation_router(
         agent_harness::inbound::conversations::AgentConversationRouterState::new(
             conversations_service,
@@ -1568,6 +1578,7 @@ async fn run() -> anyhow::Result<()> {
                 changes_state,
             )
             .with_sharing(sharing)
+            .with_session_wait(session_wait)
             .with_routine_sessions(routine_sessions)
             .with_conversations(conversations)
             .with_coding_agents(coding_agents)

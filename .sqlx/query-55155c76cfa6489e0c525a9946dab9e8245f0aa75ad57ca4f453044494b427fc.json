@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO scheduled_action_event_run (action_id, event_id, configuration_revision, event_context, hop)\n            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (action_id, event_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Jsonb",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "55155c76cfa6489e0c525a9946dab9e8245f0aa75ad57ca4f453044494b427fc"
+}

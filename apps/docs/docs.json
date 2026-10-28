@@ -264,6 +264,7 @@
               "AI/mcp/tools/update-sharing",
               "AI/mcp/tools/update-thread-labels",
               "AI/mcp/tools/upload-file",
+              "AI/mcp/tools/wait-agent-session",
               "AI/mcp/tools/web-fetch",
               "AI/mcp/tools/web-search"
             ]

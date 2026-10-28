@@ -723,6 +723,7 @@ fn conversation_tools_only_advertise_new_sessions() {
         assert!(!tools.prompt.to_string().contains("ReadChat"));
         for name in [
             "ReadAgentSession",
+            "WaitAgentSession",
             "ReadAgentSessionSharing",
             "UpdateAgentSessionSharing",
             "CreateAgentSession",

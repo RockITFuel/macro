@@ -216,6 +216,15 @@ impl RoutineRun<'_> {
             Self::Scheduled { .. } | Self::Manual { .. } => None,
         }
     }
+
+    /// Bot hand-offs since the last human action; schedules and owners start
+    /// a chain at 0.
+    pub fn hop(&self) -> u8 {
+        match self {
+            Self::Event(run) => run.pending.hop,
+            Self::Scheduled { .. } | Self::Manual { .. } => 0,
+        }
+    }
 }
 
 /// Reads the event a routine fired on, as the routine owner, through the

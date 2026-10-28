@@ -33615,6 +33615,10 @@
             "type": ["string", "null"],
             "format": "uuid",
             "description": "Root identifier for a reply; absent for a root."
+          },
+          "triggered_by": {
+            "type": ["string", "null"],
+            "description": "User whose invocation produced a bot author's message. Absent from\nfacts published before it existed."
           }
         }
       },

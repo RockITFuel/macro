@@ -19,3 +19,9 @@ mod session_actions_client;
 
 /// Durable system notifications.
 pub mod notifications;
+
+/// Ledger of bot work bounding chains of bots triggering bots.
+pub mod work_chain;
+
+/// Turn-state changes heard over Postgres NOTIFY, for session waiters.
+pub mod turn_signals;

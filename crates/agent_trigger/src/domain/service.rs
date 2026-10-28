@@ -10,11 +10,15 @@ mod test;
 #[cfg(feature = "admission")]
 use ai_billing::{AiAdmissionService, AiFeature, DisabledAiAdmissionService};
 
-use agent_session::domain::error::Result;
+use agent_session::domain::error::{AgentSessionError, Result};
 use agent_session::domain::model::{AgentSession, AgentSessionId, ThreadSession};
 use agent_session::domain::ports::AgentSessionRepo;
+use agent_session::domain::work_chain::{
+    ChainLink, DEFAULT_MAX_HOPS, MENTION_SESSIONS_PER_HOUR, MENTION_WINDOW, WorkChain,
+};
 use bot_id::BotId;
 use bots::domain::models::{Agent, AgentChannelScope, Bot, BotKind, BotOwner};
+use chrono::{TimeDelta, Utc};
 use entity_access::domain::models::EntityAccessReceipt;
 use messages::domain::mentions::bot_mention_ids;
 use messages::domain::service::MessageWrite;
@@ -26,6 +30,7 @@ use macro_user_id::user_id::MacroUserIdStr;
 use macro_uuid::Uuid;
 
 use crate::domain::broker_events::{ThreadMessageKind, TriggerDecision};
+use crate::domain::task_assignment::bot_scoped_id;
 use crate::domain::thread_window::{ThreadMessage, render_transcript, thread_window};
 use crate::domain::yield_event::{
     AgentSessionEventDecision, NoEventReason, PotentialTriggerEvent, yield_event,
@@ -176,6 +181,8 @@ pub struct AgentTriggerService<Repo, Bots, Teams, Channels, Replies, Judge, Hist
     judge: Judge,
     history: History,
     conversations: Option<Arc<dyn ConversationRouting>>,
+    /// Without it, a bot's mention of another bot starts nothing.
+    chain: Option<Arc<dyn WorkChain>>,
     #[cfg(feature = "admission")]
     admission: Arc<dyn AiAdmissionService>,
 }
@@ -211,6 +218,7 @@ where
             judge,
             history,
             conversations: None,
+            chain: None,
             #[cfg(feature = "admission")]
             admission: Arc::new(DisabledAiAdmissionService),
         }
@@ -220,6 +228,15 @@ where
     /// or thread replies.
     pub fn with_conversations(mut self, router: Arc<dyn ConversationRouting>) -> Self {
         self.conversations = Some(router);
+        self
+    }
+
+    /// Let a bot's channel post that mentions another bot start or feed that
+    /// bot's session, for the user the posting bot acted for. `chain` bounds
+    /// such chains: [`DEFAULT_MAX_HOPS`] hand-offs since the last human
+    /// action, [`MENTION_SESSIONS_PER_HOUR`] per mentioned bot and user.
+    pub fn with_work_chain(mut self, chain: Arc<dyn WorkChain>) -> Self {
+        self.chain = Some(chain);
         self
     }
 
@@ -241,7 +258,7 @@ where
         posted: &MessagePostedMetadata,
         bot_id: BotId,
     ) -> Result<bool> {
-        let Some(caller) = posted.sender.as_user().cloned().map(CowLike::into_owned) else {
+        let Some(caller) = posted.acting_user() else {
             return Ok(false);
         };
 
@@ -360,7 +377,7 @@ where
         &self,
         posted: &MessagePostedMetadata,
     ) -> Result<Option<AuthorizedInvocation>> {
-        let Some(user) = posted.sender.as_user().cloned().map(CowLike::into_owned) else {
+        let Some(user) = posted.acting_user() else {
             return Ok(None);
         };
         self.history
@@ -378,7 +395,7 @@ where
     ))]
     pub async fn evaluate(&self, posted: &MessagePostedMetadata) -> Result<Vec<TriggerDecision>> {
         let Some(user) = posted.sender.as_user().cloned().map(CowLike::into_owned) else {
-            return Ok(Vec::new());
+            return self.evaluate_bot_post(posted).await;
         };
         let Some(invocation) = self
             .history
@@ -426,6 +443,82 @@ where
             }
         }
 
+        Ok(events)
+    }
+
+    /// A bot's channel post reaches the bots it explicitly mentions, never
+    /// through conversations or implicit replies, while its chain allows.
+    async fn evaluate_bot_post(
+        &self,
+        posted: &MessagePostedMetadata,
+    ) -> Result<Vec<TriggerDecision>> {
+        let (Some(chain), Some(sender), Some(user)) = (
+            &self.chain,
+            posted.sender.as_bot().map(|bot| bot.bot_id()),
+            posted.acting_user(),
+        ) else {
+            return Ok(Vec::new());
+        };
+        if !matches!(posted.parent, MessageParent::Channel(_)) {
+            return Ok(Vec::new());
+        }
+        let mut mentioned = bot_mention_ids(&posted.mentions);
+        mentioned.retain(|bot| *bot != sender);
+        mentioned.sort_by_key(ToString::to_string);
+        if mentioned.is_empty()
+            || self
+                .history
+                .authorize_invocation(&user, &posted.parent, posted.root_id())
+                .await?
+                .is_none()
+        {
+            return Ok(Vec::new());
+        }
+        let cause = chain
+            .cause(sender, &user, posted.created_at)
+            .await
+            .map_err(AgentSessionError::Unknown)?;
+        let Some(hop) = cause.next_hop(DEFAULT_MAX_HOPS) else {
+            tracing::info!(
+                message_id = %posted.message_id,
+                hop = cause.hop,
+                "bot chain reached its hop limit"
+            );
+            return Ok(Vec::new());
+        };
+        let mut seen_sessions = HashSet::new();
+        let mut events = Vec::new();
+        for bot_id in mentioned {
+            let now = Utc::now();
+            let recent = chain
+                .mention_sessions_since(bot_id, &user, now - TimeDelta::hours(1))
+                .await
+                .map_err(AgentSessionError::Unknown)?;
+            if recent >= MENTION_SESSIONS_PER_HOUR {
+                tracing::info!(%bot_id, recent, "bot reached its hourly limit of bot mentions");
+                continue;
+            }
+            let Some(event) = self
+                .evaluate_bot(posted, Some(bot_id), &mut seen_sessions)
+                .await?
+            else {
+                continue;
+            };
+            // Keyed by message and bot, so a redelivered post records once.
+            chain
+                .start(ChainLink {
+                    id: bot_scoped_id(posted.message_id, bot_id),
+                    bot: bot_id,
+                    user: user.clone(),
+                    hop,
+                    routine_id: None,
+                    started_at: now,
+                    ends_at: now + MENTION_WINDOW,
+                })
+                .await
+                .map_err(AgentSessionError::Unknown)?;
+            events.push(event);
+        }
         Ok(events)
     }
 

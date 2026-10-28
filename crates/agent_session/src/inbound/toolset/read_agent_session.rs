@@ -24,6 +24,8 @@ use crate::domain::{
 pub struct ReadAgentSessionContext<R, A> {
     /// Domain conversation reader.
     pub service: Arc<SessionReader<R>>,
+    /// Waits on the session's current turn.
+    pub waiter: Arc<crate::domain::wait::SessionWaiter<R>>,
     /// Existing session-sharing policy.
     pub sharing: Arc<crate::domain::sharing::SessionSharingService<R>>,
     /// Mints a view-access capability for the caller.

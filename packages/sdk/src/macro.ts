@@ -229,7 +229,10 @@ export class Macro<T extends MacroOpts = MacroOpts> {
   }
 }
 
-export type { FoldedAgentSessionLog } from './entities/agent-sessions/agent-session';
+export type {
+  FoldedAgentSessionLog,
+  WaitOptions,
+} from './entities/agent-sessions/agent-session';
 export type { CodeResult } from './entities/agent-sessions/code-execution';
 export {
   AgentConversation,

@@ -10,6 +10,7 @@ import type {
   PullRequestLinkSource,
   SandboxSize,
   SessionBot,
+  SessionWait,
 } from '../../../generated/agent-harness/types.gen';
 import { unwrap } from '../../utils';
 import type { MacroClient } from '../../utils/client';
@@ -34,6 +35,12 @@ export type FoldedAgentSessionLog = {
    * requests and how each turn ended.
    */
   messages: FoldedMessage[];
+};
+
+/** How long {@link AgentSession.wait} waits. */
+export type WaitOptions = {
+  /** Milliseconds to wait before returning with `timedOut`; default 120000, at most 600000. */
+  timeoutMs?: number;
 };
 
 /** A GitHub pull request linked to a session. */
@@ -449,6 +456,25 @@ export class AgentSession extends MacroEntity<AgentSessionResponse> {
     // The schema is opaque: the server serializes the fold's `FoldedMessage`,
     // whose TypeScript contract is generated from the same Rust type.
     return { bot, messages: messages as FoldedMessage[] };
+  }
+
+  /**
+   * Wait until this session's current turn finishes, needs an answer or
+   * approval, or fails, then return its status and latest messages. Returns
+   * at once when the session is not running.
+   *
+   * `status` is `running`, `idle`, `waiting`, `failed` or `disconnected`.
+   * `timedOut` is true when `timeoutMs` passed with the turn still running;
+   * call again to keep waiting. When `status` is `waiting`, `pendingRequests`
+   * holds the agent's question or approval request with its options.
+   */
+  async wait(options: WaitOptions = {}): Promise<SessionWait> {
+    return unwrap(
+      await this.client.agentHarness.waitAgentSession({
+        path: { session_id: this.id },
+        query: { timeoutMs: options.timeoutMs },
+      }),
+    );
   }
 
   /** Read the complete raw protocol log for this session. */

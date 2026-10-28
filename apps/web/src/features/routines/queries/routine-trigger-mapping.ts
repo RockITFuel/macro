@@ -14,6 +14,7 @@ function serializeFilter(trigger: EventTriggerDraft) {
     events: trigger.events,
     ...(trigger.ids === undefined ? {} : { ids: trigger.ids }),
     ...(condition ? { condition } : {}),
+    ...(trigger.botActivity ? { bot_activity: trigger.botActivity } : {}),
   };
 }
 
@@ -80,6 +81,7 @@ export function parseRoutineTriggers(
         events: filter.events,
         ids: filter.ids ?? undefined,
         condition: filter.condition ?? undefined,
+        botActivity: filter.bot_activity ?? undefined,
       }));
     const draft = {
       ...newScheduleTrigger('custom'),

@@ -1,6 +1,6 @@
 # Type Alias: MessageMentionedMetadata
 
-> **MessageMentionedMetadata** = \{ `content`: `string`; `created_at`: `string`; `mentioned`: [`SimpleMention`](SimpleMention.md); `message_id`: `string`; `parent`: [`MessageParent`](MessageParent.md); `root_id`: `string`; `sender`: [`ChannelSender`](ChannelSender.md); `thread_id?`: `string` \| `null`; \}
+> **MessageMentionedMetadata** = \{ `content`: `string`; `created_at`: `string`; `mentioned`: [`SimpleMention`](SimpleMention.md); `message_id`: `string`; `parent`: [`MessageParent`](MessageParent.md); `root_id`: `string`; `sender`: [`ChannelSender`](ChannelSender.md); `thread_id?`: `string` \| `null`; `triggered_by?`: `string` \| `null`; \}
 
 One mentioned entity in a committed post; the full mention list travels on
 the posted fact.
@@ -17,3 +17,4 @@ the posted fact.
 | <a id="property-root_id"></a> `root_id` | `string` | Stable identity of the conversation. |
 | <a id="property-sender"></a> `sender` | [`ChannelSender`](ChannelSender.md) | Message author; may be a bot. |
 | <a id="property-thread_id"></a> `thread_id?` | `string` \| `null` | Root identifier for a reply; absent for a root. |
+| <a id="property-triggered_by"></a> `triggered_by?` | `string` \| `null` | User whose invocation produced a bot author's message. Absent from facts published before it existed. |

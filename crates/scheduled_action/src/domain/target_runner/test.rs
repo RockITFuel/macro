@@ -239,6 +239,7 @@ fn event() -> AuthorizedEventRun {
             revision: ConfigurationRevision::INITIAL,
             event,
             admitted_at: Utc::now(),
+            hop: 0,
         },
     }
 }
@@ -695,6 +696,7 @@ fn event_run() -> ClaimedEventRun {
                 revision: action.configuration_revision,
                 event,
                 admitted_at: Utc::now(),
+                hop: 0,
             },
         },
         action,
@@ -1010,6 +1012,7 @@ async fn a_task_status_change_hands_the_agent_the_task_instead_of_its_ids() {
             revision: ConfigurationRevision::INITIAL,
             event,
             admitted_at: at,
+            hop: 0,
         },
     };
     let mut handle = ExecutionHandle::default();

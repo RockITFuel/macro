@@ -1,10 +1,13 @@
 //! Routine-owned event eligibility and exact selector matching.
 //!
 //! Adapters strip the broker envelope into [`IncomingEvent`]. Only explicitly
-//! allowlisted human actions, inbound emails and call lifecycle events become
-//! compact [`EventReference`]s.
+//! allowlisted actions, inbound emails and call lifecycle events become
+//! compact [`EventReference`]s. An action by a bot for a user matches only
+//! filters that accept [`BotActivity`].
 
 use activity::Actor;
+use agent_session::domain::work_chain::{DEFAULT_MAX_HOPS, MAX_HOPS};
+use bot_id::BotId;
 use call::domain::events::CallTopicEvent;
 use channels::domain::broker_events::ChannelTopicEvent;
 use chrono::{DateTime, Utc};
@@ -266,6 +269,90 @@ pub enum FilterValidationError {
     EventCount,
     #[error("expected at most 100 entity IDs per filter")]
     IdCount,
+    #[error("expected max_hops between 1 and 5 and max_runs_per_hour between 1 and 60")]
+    BotActivityLimits,
+}
+
+/// Lets a filter match changes made by agents and bots, within limits that
+/// stop bots from triggering each other forever. A routine never runs for
+/// activity its own runs caused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+#[serde(try_from = "BotActivityInput")]
+pub struct BotActivity {
+    /// Bot hand-offs allowed since the last human action, 1 to 5 (default 3).
+    /// A run started by a bot that a person started is hop 1.
+    #[schema(minimum = 1, maximum = 5)]
+    max_hops: u8,
+    /// Runs bot activity may start per hour, 1 to 60 (default 10).
+    #[schema(minimum = 1, maximum = 60)]
+    max_runs_per_hour: u16,
+}
+
+pub const MAX_BOT_RUNS_PER_HOUR: u16 = 60;
+pub const DEFAULT_BOT_RUNS_PER_HOUR: u16 = 10;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BotActivityInput {
+    #[serde(default = "default_max_hops")]
+    max_hops: u8,
+    #[serde(default = "default_bot_runs_per_hour")]
+    max_runs_per_hour: u16,
+}
+
+fn default_max_hops() -> u8 {
+    DEFAULT_MAX_HOPS
+}
+
+fn default_bot_runs_per_hour() -> u16 {
+    DEFAULT_BOT_RUNS_PER_HOUR
+}
+
+impl TryFrom<BotActivityInput> for BotActivity {
+    type Error = FilterValidationError;
+
+    fn try_from(input: BotActivityInput) -> Result<Self, Self::Error> {
+        Self::new(input.max_hops, input.max_runs_per_hour)
+    }
+}
+
+impl Default for BotActivity {
+    fn default() -> Self {
+        Self {
+            max_hops: DEFAULT_MAX_HOPS,
+            max_runs_per_hour: DEFAULT_BOT_RUNS_PER_HOUR,
+        }
+    }
+}
+
+impl BotActivity {
+    pub fn new(max_hops: u8, max_runs_per_hour: u16) -> Result<Self, FilterValidationError> {
+        if !(1..=MAX_HOPS).contains(&max_hops)
+            || !(1..=MAX_BOT_RUNS_PER_HOUR).contains(&max_runs_per_hour)
+        {
+            return Err(FilterValidationError::BotActivityLimits);
+        }
+        Ok(Self {
+            max_hops,
+            max_runs_per_hour,
+        })
+    }
+
+    pub fn max_hops(self) -> u8 {
+        self.max_hops
+    }
+
+    pub fn max_runs_per_hour(self) -> u16 {
+        self.max_runs_per_hour
+    }
+
+    /// The larger of each limit.
+    fn widest(self, other: Self) -> Self {
+        Self {
+            max_hops: self.max_hops.max(other.max_hops),
+            max_runs_per_hour: self.max_runs_per_hour.max(other.max_runs_per_hour),
+        }
+    }
 }
 
 /// An event name AND an entity ID must match within the same filter. A
@@ -282,6 +369,10 @@ pub struct EventFilter {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<String>, max_length = 500)]
     condition: Option<YesNoQuestion>,
+    /// Also match changes made by agents and bots. Omitted, only people's
+    /// changes, inbound email and calls match.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bot_activity: Option<BotActivity>,
 }
 
 #[derive(Deserialize)]
@@ -292,13 +383,17 @@ struct FilterInput {
     ids: Option<Vec<Uuid>>,
     #[serde(default)]
     condition: Option<YesNoQuestion>,
+    #[serde(default)]
+    bot_activity: Option<BotActivity>,
 }
 
 impl TryFrom<FilterInput> for EventFilter {
     type Error = FilterValidationError;
 
     fn try_from(input: FilterInput) -> Result<Self, Self::Error> {
-        Ok(Self::new(input.events, input.ids)?.with_condition(input.condition))
+        Ok(Self::new(input.events, input.ids)?
+            .with_condition(input.condition)
+            .with_bot_activity(input.bot_activity))
     }
 }
 
@@ -326,12 +421,22 @@ impl EventFilter {
             events,
             ids,
             condition: None,
+            bot_activity: None,
         })
     }
 
     pub fn with_condition(mut self, condition: Option<YesNoQuestion>) -> Self {
         self.condition = condition;
         self
+    }
+
+    pub fn with_bot_activity(mut self, bot_activity: Option<BotActivity>) -> Self {
+        self.bot_activity = bot_activity;
+        self
+    }
+
+    pub fn bot_activity(&self) -> Option<BotActivity> {
+        self.bot_activity
     }
 
     pub fn events(&self) -> &[EventName] {
@@ -353,6 +458,13 @@ impl EventFilter {
                 .general_event()
                 .is_some_and(|general| self.events.contains(&general)))
             && self.ids.as_ref().is_none_or(|ids| ids.contains(&entity_id))
+    }
+
+    /// Whether this filter starts a run for `event`, which a bot caused when
+    /// `bot_caused`.
+    fn applies(&self, event: &EventReference, bot_caused: bool) -> bool {
+        self.accepts(event.event_name, event.entity_id)
+            && (!bot_caused || self.bot_activity.is_some())
     }
 }
 
@@ -399,15 +511,30 @@ impl EventFilters {
         self.0.iter().any(|filter| filter.condition.is_some())
     }
 
+    /// The widest limits among the filters accepting `event` from a bot;
+    /// `None` when none of them accepts bot activity.
+    pub fn bot_activity(&self, event: &EventReference) -> Option<BotActivity> {
+        self.0
+            .iter()
+            .filter(|filter| filter.accepts(event.event_name, event.entity_id))
+            .filter_map(|filter| filter.bot_activity)
+            .reduce(BotActivity::widest)
+    }
+
     /// What a matching event must satisfy before its run starts. A matching
     /// filter without a condition runs unconditionally; otherwise any one of
-    /// the matching filters' conditions is enough.
-    pub fn condition_requirement(&self, event: &EventReference) -> ConditionRequirement {
+    /// the matching filters' conditions is enough. A bot-caused event only
+    /// counts the filters that accept bot activity.
+    pub fn condition_requirement(
+        &self,
+        event: &EventReference,
+        bot_caused: bool,
+    ) -> ConditionRequirement {
         let mut conditions = Vec::new();
         for filter in self
             .0
             .iter()
-            .filter(|filter| filter.accepts(event.event_name, event.entity_id))
+            .filter(|filter| filter.applies(event, bot_caused))
         {
             match &filter.condition {
                 None => return ConditionRequirement::Unconditional,
@@ -557,6 +684,25 @@ fn channel_parent(parent: &MessageParent) -> Result<Uuid, EventRejection> {
     }
 }
 
+/// Who caused an event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EventOrigin {
+    /// A person acting for themselves, mail arriving, or a call.
+    Person,
+    /// A bot, usually an agent, acting for a user.
+    Bot {
+        bot: BotId,
+        user: MacroUserIdStr<'static>,
+    },
+}
+
+/// An eligible event and who caused it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NormalizedEvent {
+    pub reference: EventReference,
+    pub origin: EventOrigin,
+}
+
 #[derive(Debug, Clone)]
 pub struct IncomingEvent {
     pub event_id: Uuid,
@@ -571,7 +717,7 @@ pub enum EventRejection {
     UnsupportedSchema,
     #[error("unsupported event name")]
     UnsupportedEvent,
-    #[error("event attribution is not unambiguously human")]
+    #[error("event attribution is neither a person nor a bot acting for a user")]
     UnsafeAttribution,
     #[error("event identity is not a verifiable UUIDv7")]
     InvalidIdentity,
@@ -581,23 +727,44 @@ pub enum EventRejection {
     InvalidContext,
 }
 
-fn require_human(actor: Option<&Actor<'static>>, delegated: bool) -> Result<(), EventRejection> {
-    if !delegated && actor.is_some_and(|actor| actor.as_user().is_some()) {
-        Ok(())
-    } else {
-        Err(EventRejection::UnsafeAttribution)
+/// A user acting for themselves, or a bot acting for a user. Anything else,
+/// including a bot acting for nobody, is ambiguous.
+fn origin(
+    actor: Option<&Actor<'static>>,
+    on_behalf_of: Option<&MacroUserIdStr<'static>>,
+) -> Result<EventOrigin, EventRejection> {
+    let actor = actor.ok_or(EventRejection::UnsafeAttribution)?;
+    match (actor.as_user(), actor.as_bot(), on_behalf_of) {
+        (Some(_), _, None) => Ok(EventOrigin::Person),
+        (None, Some(bot), Some(user)) => Ok(EventOrigin::Bot {
+            bot: bot.bot_id(),
+            user: user.clone(),
+        }),
+        _ => Err(EventRejection::UnsafeAttribution),
     }
+}
+
+/// Messages name the user a bot acted for as a string.
+fn message_origin(
+    sender: &Actor<'static>,
+    triggered_by: Option<&str>,
+) -> Result<EventOrigin, EventRejection> {
+    let on_behalf_of = triggered_by
+        .map(|user| MacroUserIdStr::try_from(user.to_owned()))
+        .transpose()
+        .map_err(|_| EventRejection::UnsafeAttribution)?;
+    origin(Some(sender), on_behalf_of.as_ref())
 }
 
 fn document_actor(
     actor: Option<&Actor<'static>>,
     fallback: Option<&MacroUserIdStr<'static>>,
-    delegated: bool,
-) -> Result<(), EventRejection> {
-    if actor.is_some() || delegated {
-        require_human(actor, delegated)
+    on_behalf_of: Option<&MacroUserIdStr<'static>>,
+) -> Result<EventOrigin, EventRejection> {
+    if actor.is_some() || on_behalf_of.is_some() {
+        origin(actor, on_behalf_of)
     } else if fallback.is_some() {
-        Ok(())
+        Ok(EventOrigin::Person)
     } else {
         Err(EventRejection::UnsafeAttribution)
     }
@@ -624,69 +791,71 @@ impl IncomingEvent {
 
     /// Fail closed on attribution, identity and schema. Wildcard arms are
     /// deliberate: future source variants remain non-triggering by default.
-    pub fn normalize(&self) -> Result<EventReference, EventRejection> {
+    pub fn normalize(&self) -> Result<NormalizedEvent, EventRejection> {
         // All currently supported source schemas are version 1. A producer
         // version change requires reviewing eligibility before accepting it.
         if self.schema_version != 1 {
             return Err(EventRejection::UnsupportedSchema);
         }
         let event_id = EventId::try_from(self.event_id)?;
-        let (event_name, entity_id, message_id) = match &self.payload {
+        let (event_name, entity_id, message_id, origin) = match &self.payload {
             EventPayload::Document(event) => {
-                let (name, id) = match event {
+                let (name, id, origin) = match event {
                     DocumentTopicEvent::Created(data) => {
-                        require_human(data.actor.as_ref(), data.on_behalf_of.is_some())?;
+                        let origin = origin(data.actor.as_ref(), data.on_behalf_of.as_ref())?;
                         let name = if data.sub_type == Some(DocumentSubType::Task) {
                             EventName::TaskCreated
                         } else {
                             EventName::DocumentCreated
                         };
-                        (name, &data.document_id)
+                        (name, &data.document_id, origin)
                     }
                     DocumentTopicEvent::Deleted(data) => {
-                        document_actor(
+                        let origin = document_actor(
                             data.actor.as_ref(),
                             data.actor_user_id.as_ref(),
-                            data.on_behalf_of.is_some(),
+                            data.on_behalf_of.as_ref(),
                         )?;
                         if data.sub_type == Some(DocumentSubType::Task) {
                             return Err(EventRejection::UnsupportedEvent);
                         }
-                        (EventName::DocumentDeleted, &data.document_id)
+                        (EventName::DocumentDeleted, &data.document_id, origin)
                     }
                     DocumentTopicEvent::Updated(data) => {
-                        document_actor(
+                        let origin = document_actor(
                             data.actor.as_ref(),
                             data.actor_user_id.as_ref(),
-                            data.on_behalf_of.is_some(),
+                            data.on_behalf_of.as_ref(),
                         )?;
-                        (EventName::DocumentUpdated, &data.document_id)
+                        (EventName::DocumentUpdated, &data.document_id, origin)
                     }
                     _ => return Err(EventRejection::UnsupportedEvent),
                 };
                 let id = Uuid::parse_str(id).map_err(|_| EventRejection::InvalidEntityId)?;
-                (name, id, None)
+                (name, id, None, origin)
             }
             EventPayload::Channel(event) => match event {
-                ChannelTopicEvent::Created(data) => {
-                    require_human(Some(&data.actor), data.on_behalf_of.is_some())?;
-                    (EventName::ChannelCreated, data.channel_id, None)
-                }
+                ChannelTopicEvent::Created(data) => (
+                    EventName::ChannelCreated,
+                    data.channel_id,
+                    None,
+                    origin(Some(&data.actor), data.on_behalf_of.as_ref())?,
+                ),
                 _ => return Err(EventRejection::UnsupportedEvent),
             },
             EventPayload::Message(fact) => match fact {
                 MessageFact::Posted(data) => {
                     let channel_id = channel_parent(&data.parent)?;
-                    require_human(Some(&data.sender), data.triggered_by.is_some())?;
                     (
                         EventName::ChannelMessagePosted,
                         channel_id,
                         Some(data.message_id),
+                        message_origin(&data.sender, data.triggered_by.as_deref())?,
                     )
                 }
                 MessageFact::Mentioned(data) => {
                     let channel_id = channel_parent(&data.parent)?;
-                    require_human(Some(&data.sender), false)?;
+                    let origin = message_origin(&data.sender, data.triggered_by.as_deref())?;
                     if data.mentioned.entity_type != "user" {
                         return Err(EventRejection::UnsupportedEvent);
                     }
@@ -694,32 +863,34 @@ impl IncomingEvent {
                         EventName::ChannelMentioned,
                         channel_id,
                         Some(data.message_id),
+                        origin,
                     )
                 }
+                // Edits and attachments do not say whom a bot acted for.
                 MessageFact::Patched(data) => {
                     let channel_id = channel_parent(&data.parent)?;
-                    require_human(Some(&data.actor), false)?;
                     (
                         EventName::ChannelMessagePatched,
                         channel_id,
                         Some(data.message_id),
+                        origin(Some(&data.actor), None)?,
                     )
                 }
                 MessageFact::AttachmentCreated(data) => {
                     let channel_id = channel_parent(&data.parent)?;
-                    require_human(Some(&data.actor), false)?;
                     (
                         EventName::ChannelMessageAttachmentCreated,
                         channel_id,
                         Some(data.message_id),
+                        origin(Some(&data.actor), None)?,
                     )
                 }
                 MessageFact::Other => return Err(EventRejection::UnsupportedEvent),
             },
             EventPayload::Property(event) => {
-                let (name, id) = task_property_event(event)?;
+                let (name, id, origin) = task_property_event(event)?;
                 let id = Uuid::parse_str(id).map_err(|_| EventRejection::InvalidEntityId)?;
-                (name, id, None)
+                (name, id, None, origin)
             }
             EventPayload::Email(EmailTopicEvent::MessageReceived(data)) => {
                 // The email domain emits this only for newly received mail,
@@ -731,12 +902,18 @@ impl IncomingEvent {
                     EventName::EmailMessageReceived,
                     data.thread_id,
                     Some(data.message_id),
+                    EventOrigin::Person,
                 )
             }
             EventPayload::Email(_) => return Err(EventRejection::UnsupportedEvent),
             EventPayload::Call(CallTopicEvent::Started(data)) => {
                 // The creator is always a Macro account; the call is theirs.
-                (EventName::CallStarted, data.call_id, None)
+                (
+                    EventName::CallStarted,
+                    data.call_id,
+                    None,
+                    EventOrigin::Person,
+                )
             }
             EventPayload::Call(CallTopicEvent::RecordArchived(data)) => {
                 // A call ends when its people leave, not by anyone's action;
@@ -744,21 +921,31 @@ impl IncomingEvent {
                 if data.participants.is_empty() {
                     return Err(EventRejection::UnsafeAttribution);
                 }
-                (EventName::CallEnded, data.call_id, None)
+                (
+                    EventName::CallEnded,
+                    data.call_id,
+                    None,
+                    EventOrigin::Person,
+                )
             }
             EventPayload::Call(_) => return Err(EventRejection::UnsupportedEvent),
         };
-        Ok(EventReference {
-            event_id,
-            event_name,
-            entity_id,
-            message_id,
+        Ok(NormalizedEvent {
+            reference: EventReference {
+                event_id,
+                event_name,
+                entity_id,
+                message_id,
+            },
+            origin,
         })
     }
 }
 
-fn task_property_event(event: &PropertyTopicEvent) -> Result<(EventName, &str), EventRejection> {
-    let (entity_type, entity_id, property_id, actor, fallback, delegated) = match event {
+fn task_property_event(
+    event: &PropertyTopicEvent,
+) -> Result<(EventName, &str, EventOrigin), EventRejection> {
+    let (entity_type, entity_id, property_id, actor, fallback, on_behalf_of) = match event {
         PropertyTopicEvent::EntityPropertyUpdated(data) => {
             if data.value == data.previous_value {
                 return Err(EventRejection::UnsupportedEvent);
@@ -769,7 +956,7 @@ fn task_property_event(event: &PropertyTopicEvent) -> Result<(EventName, &str), 
                 Some(data.property_definition_id),
                 data.actor.as_ref(),
                 data.actor_user_id.as_ref(),
-                data.on_behalf_of.is_some(),
+                data.on_behalf_of.as_ref(),
             )
         }
         PropertyTopicEvent::EntityPropertyDeleted(data) => (
@@ -778,7 +965,7 @@ fn task_property_event(event: &PropertyTopicEvent) -> Result<(EventName, &str), 
             Some(data.property_definition_id),
             data.actor.as_ref(),
             data.actor_user_id.as_ref(),
-            data.on_behalf_of.is_some(),
+            data.on_behalf_of.as_ref(),
         ),
         PropertyTopicEvent::EntityPropertiesCleared(data) => (
             &data.entity_type,
@@ -786,7 +973,7 @@ fn task_property_event(event: &PropertyTopicEvent) -> Result<(EventName, &str), 
             None,
             data.actor.as_ref(),
             data.actor_user_id.as_ref(),
-            data.on_behalf_of.is_some(),
+            data.on_behalf_of.as_ref(),
         ),
         _ => return Err(EventRejection::UnsupportedEvent),
     };
@@ -794,11 +981,11 @@ fn task_property_event(event: &PropertyTopicEvent) -> Result<(EventName, &str), 
     if *entity_type != PropertyEntityType::Task {
         return Err(EventRejection::UnsupportedEvent);
     }
-    document_actor(actor, fallback, delegated)?;
+    let origin = document_actor(actor, fallback, on_behalf_of)?;
     let name = match property_id {
         Some(SystemPropertyKey::STATUS_UUID) => EventName::TaskStatusChanged,
         Some(SystemPropertyKey::PRIORITY_UUID) => EventName::TaskPriorityChanged,
         _ => EventName::TaskPropertyChanged,
     };
-    Ok((name, entity_id))
+    Ok((name, entity_id, origin))
 }

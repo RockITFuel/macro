@@ -106,7 +106,9 @@ fn all_allowlisted_human_events_normalize_to_minimal_context() {
         "channel.message_patched",
         "channel.message_attachment_created",
     ] {
-        let event = incoming(name, metadata()).normalize().unwrap();
+        let normalized = incoming(name, metadata()).normalize().unwrap();
+        assert_eq!(normalized.origin, EventOrigin::Person);
+        let event = normalized.reference;
         assert_eq!(event.event_name().as_str(), name);
         assert_eq!(event.entity_id().to_string(), ENTITY_ID);
         assert_eq!(
@@ -124,28 +126,95 @@ fn all_allowlisted_human_events_normalize_to_minimal_context() {
 }
 
 #[test]
-fn explicit_bots_never_fall_back_to_human_owner_actor_or_subject() {
-    for (name, field) in [
-        ("document.created", "actor"),
-        ("document.updated", "actor"),
-        ("channel.created", "actor"),
-        ("channel.message_posted", "sender"),
-        ("channel.mentioned", "sender"),
-        ("channel.message_patched", "actor"),
-        ("channel.message_attachment_created", "actor"),
+fn bots_count_only_when_acting_for_a_user() {
+    let origin = EventOrigin::Bot {
+        bot: BotId::parse_uuid_str("01900000-0000-7000-8000-000000000004").unwrap(),
+        user: MacroUserIdStr::parse_from_str(HUMAN).unwrap(),
+    };
+    for (name, field, delegation) in [
+        ("document.created", "actor", "on_behalf_of"),
+        ("document.updated", "actor", "on_behalf_of"),
+        ("channel.created", "actor", "on_behalf_of"),
+        ("channel.message_posted", "sender", "triggered_by"),
+        ("channel.mentioned", "sender", "triggered_by"),
     ] {
-        for delegated in [false, true] {
-            let mut data = metadata();
-            data[field] = json!(BOT);
-            if delegated {
-                data["on_behalf_of"] = json!(HUMAN);
-            }
-            assert_eq!(
-                incoming(name, data).normalize(),
-                Err(EventRejection::UnsafeAttribution)
-            );
-        }
+        let mut data = metadata();
+        data[field] = json!(BOT);
+        assert_eq!(
+            incoming(name, data.clone()).normalize(),
+            Err(EventRejection::UnsafeAttribution)
+        );
+        data[delegation] = json!(HUMAN);
+        assert_eq!(incoming(name, data).normalize().unwrap().origin, origin);
     }
+    // Edits and attachments do not say whom the bot acted for.
+    for name in [
+        "channel.message_patched",
+        "channel.message_attachment_created",
+    ] {
+        let mut data = metadata();
+        data["actor"] = json!(BOT);
+        data["triggered_by"] = json!(HUMAN);
+        assert_eq!(
+            incoming(name, data).normalize(),
+            Err(EventRejection::UnsafeAttribution)
+        );
+    }
+}
+
+#[test]
+fn bot_activity_matches_only_filters_that_accept_it() {
+    let event = incoming("document.updated", metadata())
+        .normalize()
+        .unwrap()
+        .reference;
+    let people_only = filters(json!([{"events": ["document.updated"]}]));
+    assert_eq!(people_only.bot_activity(&event), None);
+    let defaults = filters(json!([{"events": ["document.updated"], "bot_activity": {}}]));
+    assert_eq!(defaults.bot_activity(&event), Some(BotActivity::default()));
+    let widest = filters(json!([
+        {"events": ["document.updated"], "bot_activity": {"max_hops": 1, "max_runs_per_hour": 30}},
+        {"events": ["document.updated"], "ids": [ENTITY_ID], "bot_activity": {"max_hops": 4, "max_runs_per_hour": 2}},
+        {"events": ["document.created"], "bot_activity": {"max_hops": 5, "max_runs_per_hour": 60}}
+    ]));
+    assert_eq!(
+        widest.bot_activity(&event),
+        Some(BotActivity::new(4, 30).unwrap())
+    );
+    for limits in [
+        json!({"max_hops": 0}),
+        json!({"max_hops": 6}),
+        json!({"max_runs_per_hour": 0}),
+        json!({"max_runs_per_hour": 61}),
+        json!({"unexpected": 1}),
+    ] {
+        assert!(
+            serde_json::from_value::<EventFilters>(
+                json!([{"events": ["document.updated"], "bot_activity": limits}])
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn a_bot_caused_run_answers_only_the_conditions_of_bot_filters() {
+    let event = incoming("document.updated", metadata())
+        .normalize()
+        .unwrap()
+        .reference;
+    let filters = filters(json!([
+        {"events": ["document.updated"]},
+        {"events": ["document.updated"], "condition": "Is it urgent?", "bot_activity": {}}
+    ]));
+    assert_eq!(
+        filters.condition_requirement(&event, false),
+        ConditionRequirement::Unconditional
+    );
+    assert!(matches!(
+        filters.condition_requirement(&event, true),
+        ConditionRequirement::AnyOf(conditions) if conditions.len() == 1
+    ));
 }
 
 #[test]
@@ -260,7 +329,8 @@ fn validates_schema_identity_and_document_uuid() {
 fn matching_is_same_filter_and_empty_ids_match_nothing() {
     let event = incoming("document.created", metadata())
         .normalize()
-        .unwrap();
+        .unwrap()
+        .reference;
     let activation = event.published_at();
     let separate = filters(json!([
         {"events": ["document.created"], "ids": [OTHER_ID]},
@@ -283,7 +353,8 @@ fn matching_is_same_filter_and_empty_ids_match_nothing() {
 fn duplicates_do_not_multiply_matches_and_pre_activation_events_do_not_match() {
     let event = incoming("document.created", metadata())
         .normalize()
-        .unwrap();
+        .unwrap()
+        .reference;
     let filter =
         json!({"events": ["document.created", "document.created"], "ids": [ENTITY_ID, ENTITY_ID]});
     let filters = filters(json!([filter, filter]));
@@ -327,7 +398,8 @@ fn filter_validation_cannot_be_bypassed_by_deserialization() {
 fn stored_context_cannot_bypass_identity_or_message_shape_validation() {
     let event = incoming("channel.message_posted", metadata())
         .normalize()
-        .unwrap();
+        .unwrap()
+        .reference;
     let mut stored = serde_json::to_value(event).unwrap();
     stored["message_id"] = Value::Null;
     assert!(serde_json::from_value::<EventReference>(stored.clone()).is_err());
@@ -449,6 +521,7 @@ fn document_lifecycle_distinguishes_tasks() {
         incoming("document.created", data.clone())
             .normalize()
             .unwrap()
+            .reference
             .event_name(),
         EventName::DocumentCreated
     );
@@ -456,6 +529,7 @@ fn document_lifecycle_distinguishes_tasks() {
         incoming("document.deleted", data.clone())
             .normalize()
             .unwrap()
+            .reference
             .event_name(),
         EventName::DocumentDeleted
     );
@@ -464,6 +538,7 @@ fn document_lifecycle_distinguishes_tasks() {
         incoming("document.created", data.clone())
             .normalize()
             .unwrap()
+            .reference
             .event_name(),
         EventName::TaskCreated
     );
@@ -494,7 +569,10 @@ fn task_changes_match_specific_and_any_property_selectors() {
         let mut data = property_metadata();
         data["property_definition_id"] = json!(property);
         for source in ["entity_property.updated", "entity_property.deleted"] {
-            let event = property_event(source, data.clone()).normalize().unwrap();
+            let event = property_event(source, data.clone())
+                .normalize()
+                .unwrap()
+                .reference;
             assert_eq!(event.event_name(), name);
             let any = EventFilter::new(vec![EventName::TaskPropertyChanged], None).unwrap();
             assert!(any.accepts(event.event_name(), event.entity_id()));
@@ -512,7 +590,8 @@ fn task_changes_match_specific_and_any_property_selectors() {
     }
     let event = property_event("entity_properties.cleared", property_metadata())
         .normalize()
-        .unwrap();
+        .unwrap()
+        .reference;
     assert_eq!(event.event_name(), EventName::TaskPropertyChanged);
 }
 
@@ -581,7 +660,7 @@ fn call_event(event_type: &str, participants: &[&str]) -> IncomingEvent {
 #[test]
 fn started_calls_keep_only_ids_and_belong_to_who_created_them() {
     let event = call_event("call.started", &[]);
-    let normalized = event.normalize().unwrap();
+    let normalized = event.normalize().unwrap().reference;
     assert_eq!(normalized.event_name(), EventName::CallStarted);
     assert_eq!(normalized.entity_type(), EventEntityType::Call);
     assert_eq!(normalized.entity_id().to_string(), ENTITY_ID);
@@ -599,7 +678,7 @@ fn started_calls_keep_only_ids_and_belong_to_who_created_them() {
 #[test]
 fn ended_calls_keep_only_ids_and_belong_to_the_people_who_joined() {
     let event = call_event("call.record_archived", &[HUMAN, "macro|guest@example.com"]);
-    let normalized = event.normalize().unwrap();
+    let normalized = event.normalize().unwrap().reference;
     assert_eq!(normalized.event_name(), EventName::CallEnded);
     assert_eq!(normalized.entity_type(), EventEntityType::Call);
     assert_eq!(normalized.entity_id().to_string(), ENTITY_ID);
@@ -644,7 +723,7 @@ fn email_receipts_keep_only_ids_and_exclude_spam_and_backfills() {
             .unwrap(),
         ),
     };
-    let normalized = event.normalize().unwrap();
+    let normalized = event.normalize().unwrap().reference;
     assert_eq!(normalized.event_name(), EventName::EmailMessageReceived);
     assert_eq!(normalized.entity_type(), EventEntityType::EmailThread);
     let stored = serde_json::to_string(&normalized).unwrap();

@@ -10,3 +10,4 @@
 - [FoldedAgentSessionLog](type-aliases/FoldedAgentSessionLog.md)
 - [SelectableRepository](type-aliases/SelectableRepository.md)
 - [SessionPullRequest](type-aliases/SessionPullRequest.md)
+- [WaitOptions](type-aliases/WaitOptions.md)

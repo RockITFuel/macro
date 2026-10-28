@@ -1345,6 +1345,33 @@ export type MessageParent = {
 export type ModelHarnessDto = 'in-memory' | 'cursor' | 'macrod';
 
 /**
+ * One request the turn is blocked on.
+ */
+export type PendingRequest = {
+    /**
+     * What kind of answer it needs.
+     */
+    kind: PendingRequestKind;
+    /**
+     * The question, or what needs approval, in prose.
+     */
+    message: string;
+    /**
+     * The choices offered, when the request offers fixed ones.
+     */
+    options: Array<string>;
+    /**
+     * The turn that asked.
+     */
+    turn: number;
+};
+
+/**
+ * What a request blocking the turn asks for.
+ */
+export type PendingRequestKind = 'question' | 'permission' | 'tool_approval';
+
+/**
  * The decision carried by an [`AgentPermissionAction`].
  */
 export type PermissionAnswer = {
@@ -1781,6 +1808,87 @@ export type SessionBot = {
 };
 
 /**
+ * A readable session conversation, including tool activity and failures.
+ */
+export type SessionConversation = {
+    /**
+     * Agent persona id.
+     */
+    botId: string;
+    /**
+     * Configured runtime.
+     */
+    harness: string;
+    /**
+     * Whether the session is archived and read-only.
+     */
+    isArchived: boolean;
+    /**
+     * Messages in the requested turn, or the latest messages, oldest first.
+     */
+    messages: Array<SessionConversationMessage>;
+    /**
+     * Selected model.
+     */
+    model: string;
+    /**
+     * User-facing session name.
+     */
+    name: string;
+    /**
+     * Owner's principal id.
+     */
+    ownerId: string;
+    /**
+     * Session identity.
+     */
+    sessionId: string;
+    /**
+     * Last runtime status.
+     */
+    status: string;
+    /**
+     * Number of messages matching the requested turn before bounding.
+     */
+    totalMessages: number;
+    /**
+     * Whether older messages or text were omitted.
+     */
+    truncated: boolean;
+};
+
+/**
+ * One folded prompt or reply.
+ */
+export type SessionConversationMessage = {
+    /**
+     * Readable prose, tool activity, outputs, and errors.
+     */
+    content: string;
+    /**
+     * Terminal runtime error, retained separately even when earlier text is truncated.
+     */
+    failure?: string | null;
+    /**
+     * Whether this message came from the user or agent.
+     */
+    role: SessionMessageRole;
+    /**
+     * Whether this message's text exceeded the character budget.
+     */
+    truncated: boolean;
+    /**
+     * Turn number; pass it back to read that turn specifically.
+     */
+    turn: number;
+};
+
+/**
+ * The two sides of a session conversation.
+ */
+export type SessionMessageRole = 'user' | 'agent';
+
+/**
  * A pull request associated with a session.
  */
 export type SessionPullRequestLink = {
@@ -1831,6 +1939,37 @@ export type SessionStatusDto = {
 } | {
     kind: 'disconnected';
 };
+
+/**
+ * A session's state when a wait ended, with its latest messages.
+ */
+export type SessionWait = {
+    /**
+     * The latest messages, bounded as `ReadAgentSession` bounds them.
+     */
+    conversation: SessionConversation;
+    /**
+     * The runtime error that ended the last turn, when `status` is `failed`.
+     */
+    failure?: string | null;
+    /**
+     * Requests the turn is blocked on; empty unless `status` is `waiting`.
+     */
+    pendingRequests: Array<PendingRequest>;
+    /**
+     * Where the current turn stands.
+     */
+    status: SessionWaitStatus;
+    /**
+     * Whether the wait ended at its deadline with the turn still running.
+     */
+    timedOut: boolean;
+};
+
+/**
+ * Where a session's current turn stands for someone waiting on it.
+ */
+export type SessionWaitStatus = 'running' | 'idle' | 'waiting' | 'failed' | 'disconnected';
 
 /**
  * Request body for archiving or unarchiving an agent session.
@@ -3157,3 +3296,35 @@ export type AnswerAgentSessionToolApprovalResponses = {
 };
 
 export type AnswerAgentSessionToolApprovalResponse = AnswerAgentSessionToolApprovalResponses[keyof AnswerAgentSessionToolApprovalResponses];
+
+export type WaitAgentSessionData = {
+    body?: never;
+    path: {
+        /**
+         * ID of the agent session
+         */
+        session_id: string;
+    };
+    query?: {
+        /**
+         * Milliseconds to wait before returning with `timedOut`; default
+         * 120000, at most 600000.
+         */
+        timeoutMs?: number;
+    };
+    url: '/agent-sessions/{session_id}/wait';
+};
+
+export type WaitAgentSessionErrors = {
+    401: string;
+    403: string;
+    500: string;
+};
+
+export type WaitAgentSessionError = WaitAgentSessionErrors[keyof WaitAgentSessionErrors];
+
+export type WaitAgentSessionResponses = {
+    200: SessionWait;
+};
+
+export type WaitAgentSessionResponse = WaitAgentSessionResponses[keyof WaitAgentSessionResponses];
