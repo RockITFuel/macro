@@ -228,7 +228,12 @@ redirect URI on `macro.alphamonitoring.app` and the delegated scopes in
 Gmail only), mail import `OUTLOOK_SYNC_ENABLED=true`, and sending, moving and
 flagging `OUTLOOK_WRITES_ENABLED=true`. Without an https email-service URL
 there are no Graph webhooks: Outlook polls every two minutes. Ours: a single
-tenant app in the Architechs tenant, `MICROSOFT_TENANT_ID` its tenant id. With the three `MICROSOFT_*` values the kickstart creates the
+tenant app in the Architechs tenant, `MICROSOFT_TENANT_ID` its tenant id.
+
+The email settings above (`GOOGLE_*`, `GMAIL_GCP_QUEUE`, `MICROSOFT_*`,
+`OUTLOOK_*`) live in the 1Password item "Production Macro Environment
+(email)" in vault Credentials; `render-macro-env.py` merges it with
+"Production Macro Environment" (vault Alpha) and refuses a key set in both. With the three `MICROSOFT_*` values the kickstart creates the
 `microsoft` identity provider the link is recorded under.
 
 The kickstart only runs on an empty FusionAuth, and `stack up` wipes the
