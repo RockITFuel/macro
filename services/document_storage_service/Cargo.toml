@@ -34,6 +34,7 @@ roles_and_permissions = { path = "../../crates/roles_and_permissions", default-f
 teams = { path = "../../crates/teams", default-features = false, features = ["outbound"] }
 agent_changes = { path = "../../crates/agent_changes", default-features = false, features = ["outbound"] }
 dictation = { path = "../../crates/dictation", features = ["inbound", "outbound"] }
+transcription_settings = { path = "../../crates/transcription_settings", features = ["inbound", "postgres"] }
 initiative_description = { path = "../../crates/initiative_description" }
 agent_session = { path = "../../crates/agent_session", features = ["outbound"] }
 agent_session_realtime = { path = "../../crates/agent_session_realtime" }

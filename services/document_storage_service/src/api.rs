@@ -129,6 +129,12 @@ fn api_router(state: ApiContext) -> Router {
             dictation::inbound::axum_router::dictation_router(state.dictation_state.clone()),
         )
         .nest(
+            "/transcription",
+            transcription_settings::inbound::axum_router::transcription_settings_router(
+                state.transcription_settings_state.clone(),
+            ),
+        )
+        .nest(
             "/github",
             github::inbound::github_sync_router::github_sync_router(
                 github_sync_service_router_state,

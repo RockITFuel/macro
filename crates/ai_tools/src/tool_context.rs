@@ -972,7 +972,11 @@ impl CallRtcClient for NoOpCallRtcClient {
         anyhow::bail!("call RTC client not configured")
     }
 
-    async fn dispatch_transcription_agent(&self, _room_name: &str) -> anyhow::Result<()> {
+    async fn dispatch_transcription_agent(
+        &self,
+        _room_name: &str,
+        _created_by: &str,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }

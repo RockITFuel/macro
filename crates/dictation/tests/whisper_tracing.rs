@@ -4,7 +4,7 @@
 
 use bytes::Bytes;
 use dictation::{
-    domain::{DictationError, Recording, TranscriptionProvider},
+    domain::{DictationError, Recording, SttTarget, TranscriptionProvider},
     outbound::{OpenaiApiKey, WhisperTranscriber},
 };
 use serde_json::json;
@@ -62,7 +62,7 @@ async fn malformed_provider_responses_never_log_transcript_content() {
         )
         .unwrap();
         let result = transcriber
-            .transcribe(recording)
+            .transcribe(recording, &SttTarget::Cloud)
             .with_subscriber(subscriber)
             .await;
         assert_eq!(result, Err(DictationError::Provider));

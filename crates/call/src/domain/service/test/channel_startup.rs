@@ -80,7 +80,7 @@ async fn channel_token_does_not_wait_for_media_or_recipient_notifications() {
     let sender = events.clone();
     rtc.expect_dispatch_transcription_agent()
         .times(1)
-        .return_once(move |_| {
+        .return_once(move |_, _| {
             Box::pin(async move {
                 sender.send("transcription").unwrap();
                 gate.notified().await;
@@ -227,7 +227,7 @@ async fn ended_call_does_not_ring_recipients() {
     let mut rtc = MockCallRtcClient::new();
     rtc.expect_dispatch_transcription_agent()
         .times(1)
-        .returning(|_| Box::pin(async { Ok(()) }));
+        .returning(|_, _| Box::pin(async { Ok(()) }));
     rtc.expect_start_room_composite_egress().never();
     let connection = RecordingConnectionService::default();
     let startup = super::super::channel_startup::ChannelCallStartup {

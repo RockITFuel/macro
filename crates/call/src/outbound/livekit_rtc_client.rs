@@ -20,12 +20,13 @@ use livekit_protocol::{
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::user_id::MacroUserIdStr;
 use notification::domain::models::apple::VoipPushPayload;
+use std::sync::Arc;
 
 use crate::domain::meetings::GuestId;
 use crate::domain::models::{
     CallError, CallWebhookEvent, EgressS3Config, VerifiedRingToken, VoipPushPayloadRequest,
 };
-use crate::domain::ports::CallRtcClient;
+use crate::domain::ports::{CallRtcClient, CallTranscriptionGate};
 
 const VOIP_TOKEN_MINT_CONCURRENCY: usize = 16;
 
@@ -40,6 +41,8 @@ pub struct LivekitRtcClient {
     api_secret: String,
     /// If set, the named agent is dispatched to each new room for transcription.
     transcription_agent_name: Option<String>,
+    /// If set, asked per call whether the agent joins.
+    transcription_gate: Option<Arc<dyn CallTranscriptionGate>>,
 }
 
 impl LivekitRtcClient {
@@ -79,7 +82,14 @@ impl LivekitRtcClient {
             api_key,
             api_secret,
             transcription_agent_name,
+            transcription_gate: None,
         }
+    }
+
+    /// Ask `gate` before dispatching the transcription agent to a call.
+    pub fn with_transcription_gate(mut self, gate: Arc<dyn CallTranscriptionGate>) -> Self {
+        self.transcription_gate = Some(gate);
+        self
     }
 }
 
@@ -344,10 +354,23 @@ impl CallRtcClient for LivekitRtcClient {
     }
 
     #[tracing::instrument(err, skip(self))]
-    async fn dispatch_transcription_agent(&self, room_name: &str) -> anyhow::Result<()> {
+    async fn dispatch_transcription_agent(
+        &self,
+        room_name: &str,
+        created_by: &str,
+    ) -> anyhow::Result<()> {
         let Some(agent_name) = &self.transcription_agent_name else {
             return Ok(());
         };
+        if let Some(gate) = &self.transcription_gate
+            && !gate.transcription_enabled(created_by).await
+        {
+            tracing::info!(
+                room_name,
+                "transcription is off for this team; agent not dispatched"
+            );
+            return Ok(());
+        }
 
         self.agent_dispatch_client
             .create_dispatch(CreateAgentDispatchRequest {

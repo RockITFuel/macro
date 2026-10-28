@@ -351,9 +351,10 @@ impl<
             let config = self.egress_s3_config.clone();
             let room_name = call.room_name.clone();
             let call_id = call.id;
+            let created_by = call.created_by.clone();
             tokio::spawn(async move {
                 let transcription = async {
-                    rtc.dispatch_transcription_agent(&room_name).await
+                    rtc.dispatch_transcription_agent(&room_name, &created_by).await
                         .inspect_err(|error| tracing::error!(error=?error, "failed to dispatch meeting transcription agent")).ok();
                 };
                 let recording = start_meeting_recording(&repo, rtc.as_ref(), call_id, &room_name, config.as_ref());

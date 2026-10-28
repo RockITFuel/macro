@@ -22,7 +22,7 @@ export function transcribeDictation(
     : '';
   return fetchWithToken<
     { text: string },
-    'DICTATION_CAPACITY' | 'DICTATION_RATE_LIMITED'
+    'DICTATION_CAPACITY' | 'DICTATION_RATE_LIMITED' | 'DICTATION_DISABLED'
   >(
     `${SERVER_HOSTS['document-storage-service']}/dictation/transcribe${query}`,
     {
@@ -36,6 +36,14 @@ export function transcribeDictation(
         // DSS sends delay-seconds only for capacity rejections, before Whisper.
         if (response.status === 503 && retryAfter && /^\d+$/.test(retryAfter)) {
           return new DictationCapacityError(Number(retryAfter) * 1_000);
+        }
+        // Signed-in users get 403 only when their team turned transcription off.
+        if (response.status === 403) {
+          return {
+            code: 'DICTATION_DISABLED',
+            message:
+              'Dictation is turned off for your team. A team owner or admin can turn it on in Settings › Team › Transcription.',
+          };
         }
         if (response.status === 429) {
           return {

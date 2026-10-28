@@ -24,6 +24,14 @@ from .router import RouterConfig, is_alive
 logger = logging.getLogger("local_stt.gateway")
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # OpenAI's limit; dictation stays far below
+# Model families a request may pin (Macro's team transcription settings send
+# one); anything else, such as OpenAI's `whisper-1`, lets the router choose.
+MODEL_FAMILIES = {"parakeet", "whisper"}
+
+
+def requested_model(value: object) -> str | None:
+    """The model family a request pins, or None for any capable worker."""
+    return value if isinstance(value, str) and value in MODEL_FAMILIES else None
 
 
 def build_app(queue: SttQueue, token: str, timeout_s: float = 60.0) -> web.Application:
@@ -43,6 +51,7 @@ def build_app(queue: SttQueue, token: str, timeout_s: float = 60.0) -> web.Appli
             return _error(400, "missing file")
         language = form.get("language")
         language = language if isinstance(language, str) and language else None
+        model = requested_model(form.get("model"))
         response_format = form.get("response_format") or "json"
         data = upload.file.read()
         try:
@@ -60,6 +69,7 @@ def build_app(queue: SttQueue, token: str, timeout_s: float = 60.0) -> web.Appli
                 priority=Priority.LIVE,
                 language=language,
                 timeout_s=timeout_s,
+                model=model,
             )
         except TimeoutError:
             return _error(503, "no transcription worker answered in time")

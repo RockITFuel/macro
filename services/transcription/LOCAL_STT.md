@@ -85,13 +85,24 @@ the others are away.
 
 ## Configuration
 
+Team owners and admins change transcription in **Settings › Team ›
+Transcription** (`crates/transcription_settings`, table
+`team_transcription_settings`): on/off for the team's calls and dictation,
+dictation provider (local hub or OpenAI), hub URL, model (`parakeet`, or
+`whisper` for workers running faster-whisper) and a default dictation
+language. Anything a team has not set follows the env below, so the env is
+the bootstrap default; secrets stay in env and the page only shows whether
+they are set. The gateway passes `model=parakeet|whisper` on to the router;
+any other model name (OpenAI's `whisper-1`) lets the router choose.
+
 | Variable | Where | Effect |
 | --- | --- | --- |
 | `MACRO_LOCAL_STT_REDIS_URL` | agent, hub, workers | The queue. On the agent: switches calls from Deepgram to local STT. |
 | `MACRO_LOCAL_STT_TIMEOUT_SECONDS` | agent | Seconds an utterance may wait (default 20). |
 | `MACRO_LOCAL_STT_SOCKET_TIMEOUT`, `MACRO_LOCAL_STT_CONNECT_TIMEOUT` | all | Redis read and connect timeouts (defaults 15 s, 5 s): a connection that died while a Mac slept fails and reconnects instead of hanging. |
 | `MACRO_LOCAL_STT_GATEWAY_TOKEN` | hub | Bearer token of the dictation gateway. |
-| `DICTATION_STT_API_BASE`, `DICTATION_STT_API_KEY` | document storage service | Dictation goes to this OpenAI-compatible API with this token instead of OpenAI. |
+| `DICTATION_STT_API_BASE`, `DICTATION_STT_API_KEY` | document storage service | Default: dictation goes to this OpenAI-compatible API with this token instead of OpenAI. Teams can override the URL in settings. |
+| `DICTATION_STT_ALLOWED_HOSTS` | document storage service | Comma-separated extra hosts a team may set as hub URL (the host of `DICTATION_STT_API_BASE` is always allowed). The hub token goes to that host. |
 | `LIVEKIT_TRANSCRIPTION_AGENT_NAME=macro-transcriber` | document storage service | Macro dispatches the agent to each call (needs `INTERNAL_CALL_SECRET`). |
 | `LOCAL_STT_ENGINE` | worker | `parakeet-onnx`, `parakeet-mlx`, `faster-whisper`. |
 | `LOCAL_STT_WORKER_ID`, `_THREADS`, `_MAX_CONCURRENCY`, `_PRIORITIES`, `_TIER`, `_MAX_CPU_LOAD`, `_MIN_FREE_MEM_MB`, `_DOWNLOAD_DIR`, `_PARAKEET_DIR` | worker | Routing inputs and resources; see `__main__.py`. |
@@ -116,7 +127,11 @@ the others are away.
    `tailscale0` is up (`docker compose up -d` again if it lost the race).
 6. Macro env: `LIVEKIT_TRANSCRIPTION_AGENT_NAME=macro-transcriber`,
    `DICTATION_STT_API_BASE=http://macro-stt-hub:8790/v1`,
-   `DICTATION_STT_API_KEY=<gateway token>`; re-render and `deploy.sh <sha> start`.
+   `DICTATION_STT_API_KEY=<gateway token>`; re-render and `deploy.sh <sha> start`
+   (`update` leaves running services alone when the binaries did not change,
+   so it does not pick up env changes).
 
-Rollback: unset the Macro variables (calls get no transcript, dictation uses
-OpenAI again) and `docker compose down` in `/srv/macro-stt`.
+Rollback: turn transcription off or switch dictation to OpenAI per team in
+Settings › Team › Transcription, or unset the Macro variables for every team
+(calls get no transcript, dictation uses OpenAI again) and `docker compose
+down` in `/srv/macro-stt`.

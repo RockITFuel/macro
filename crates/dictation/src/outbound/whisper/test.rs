@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::AudioFormat;
+use crate::domain::{AudioFormat, SttTarget};
 use bytes::Bytes;
 use serde_json::json;
 use wiremock::matchers::{header, method, path};
@@ -38,7 +38,10 @@ async fn posts_whisper_multipart_with_server_credential_and_reads_duration() {
         .mount(&server)
         .await;
 
-    let transcript = transcriber(&server).transcribe(recording()).await.unwrap();
+    let transcript = transcriber(&server)
+        .transcribe(recording(), &SttTarget::Cloud)
+        .await
+        .unwrap();
 
     assert_eq!(transcript.text, "Hello.");
     assert_eq!(transcript.duration_seconds, 2.5);
@@ -66,7 +69,9 @@ async fn rejects_responses_without_billable_duration() {
         .await;
 
     assert_eq!(
-        transcriber(&server).transcribe(recording()).await,
+        transcriber(&server)
+            .transcribe(recording(), &SttTarget::Cloud)
+            .await,
         Err(DictationError::Provider)
     );
 }
@@ -97,7 +102,7 @@ async fn maps_provider_rejections_to_a_content_free_error() {
         .await;
 
     let error = transcriber(&server)
-        .transcribe(recording())
+        .transcribe(recording(), &SttTarget::Cloud)
         .await
         .unwrap_err();
 
@@ -120,38 +125,59 @@ async fn mount_transcription(server: &MockServer, bearer: &'static str) {
         .await;
 }
 
+fn local(server: &MockServer, model: &str) -> SttTarget {
+    SttTarget::Local {
+        api_base: format!("{}/v1", server.uri()),
+        model: model.to_owned(),
+    }
+}
+
 #[tokio::test]
-async fn override_base_uses_its_own_token() {
+async fn a_local_target_uses_its_own_token_and_model() {
     let server = MockServer::start().await;
     mount_transcription(&server, "Bearer local-stt-token").await;
     let api_key = OpenaiApiKey::new_testing("test-server-key");
-    let base = format!("{}/v1", server.uri());
 
-    let transcript =
-        WhisperTranscriber::with_override(&api_key, Some(&base), Some("local-stt-token"))
-            .unwrap()
-            .transcribe(recording())
-            .await
-            .unwrap();
+    let transcript = WhisperTranscriber::with_local_key(&api_key, None, Some("local-stt-token"))
+        .unwrap()
+        .transcribe(recording(), &local(&server, "parakeet"))
+        .await
+        .unwrap();
 
     assert_eq!(transcript.text, "Goedemorgen.");
     assert_eq!(transcript.duration_seconds, 1.5);
+    let requests = server.received_requests().await.unwrap();
+    assert!(multipart_body(&requests[0]).contains("name=\"model\"\r\n\r\nparakeet"));
+}
+
+#[tokio::test]
+async fn a_local_target_without_a_token_fails_and_never_uses_the_openai_key() {
+    let server = MockServer::start().await;
+    let api_key = OpenaiApiKey::new_testing("test-server-key");
+
+    let result = WhisperTranscriber::new(&api_key)
+        .unwrap()
+        .transcribe(recording(), &local(&server, "parakeet"))
+        .await;
+
+    assert_eq!(result, Err(DictationError::Provider));
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[test]
-fn override_base_without_token_never_uses_the_openai_key() {
+fn a_default_base_without_token_fails_at_startup() {
     let api_key = OpenaiApiKey::new_testing("test-server-key");
     assert!(matches!(
-        WhisperTranscriber::with_override(&api_key, Some("http://stt/v1"), None),
+        WhisperTranscriber::with_local_key(&api_key, Some("http://stt/v1"), None),
         Err(WhisperConfigError::MissingSttApiKey)
     ));
 }
 
 #[test]
-fn override_rejects_an_empty_token() {
+fn rejects_an_empty_local_token() {
     let api_key = OpenaiApiKey::new_testing("test-server-key");
     assert!(matches!(
-        WhisperTranscriber::with_override(&api_key, Some("http://stt/v1"), Some(" ")),
+        WhisperTranscriber::with_local_key(&api_key, Some("http://stt/v1"), Some(" ")),
         Err(WhisperConfigError::EmptyApiKey)
     ));
 }

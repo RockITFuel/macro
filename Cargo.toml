@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
   "crates/local_kms",
+  "crates/transcription_settings",
   "crates/access_requests",
   "crates/agent_api_keys",
   "crates/routines",

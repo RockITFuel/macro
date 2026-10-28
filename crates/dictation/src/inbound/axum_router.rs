@@ -219,7 +219,7 @@ pub struct EncodedAudioBody(
         (status = 200, body = TranscribeResponse),
         (status = 400, description = "Empty, oversized, or malformed request", body = ErrorResponse),
         (status = 401, description = "Missing or invalid credentials", body = ErrorResponse),
-        (status = 403, description = "Only signed-in users may dictate", body = ErrorResponse),
+        (status = 403, description = "Only signed-in users may dictate, and only when their team has transcription on", body = ErrorResponse),
         (status = 413, description = "Body exceeds 8 MiB"),
         (status = 415, description = "Unsupported audio container", body = ErrorResponse),
         (status = 429, description = "Per-user hourly rate limit exceeded"),
@@ -258,6 +258,7 @@ impl IntoResponse for DictationError {
                 StatusCode::BAD_REQUEST
             }
             Self::UnsupportedAudio => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Self::Disabled => StatusCode::FORBIDDEN,
             Self::Busy => StatusCode::SERVICE_UNAVAILABLE,
             Self::Provider => StatusCode::BAD_GATEWAY,
         };

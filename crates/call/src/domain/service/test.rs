@@ -219,7 +219,11 @@ impl CallRtcClient for MockRtcClient {
         unreachable!("verify_access_token not exercised by these tests")
     }
 
-    async fn dispatch_transcription_agent(&self, _room_name: &str) -> anyhow::Result<()> {
+    async fn dispatch_transcription_agent(
+        &self,
+        _room_name: &str,
+        _created_by: &str,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }

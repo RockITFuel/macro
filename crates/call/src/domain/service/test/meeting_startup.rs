@@ -221,7 +221,7 @@ async fn meeting_allocation_does_not_wait_for_recording_or_transcription() {
         .returning(|_| Box::pin(async { Ok(()) }));
     rtc.expect_dispatch_transcription_agent()
         .times(1)
-        .return_once(move |_| {
+        .return_once(move |_, _| {
             Box::pin(async move {
                 agent_wait.await.unwrap();
                 Ok(())

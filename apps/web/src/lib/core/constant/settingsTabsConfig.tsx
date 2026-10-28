@@ -14,6 +14,7 @@ import GaugeIcon from '@icon/system/regular/gauge.svg';
 import HardDrivesIcon from '@icon/system/regular/hard-drives.svg';
 import KeyIcon from '@icon/system/regular/key.svg';
 import KeyboardIcon from '@icon/system/regular/keyboard.svg';
+import MicrophoneIcon from '@icon/system/regular/microphone.svg';
 import PlugIcon from '@icon/system/regular/plug.svg';
 import BotIcon from '@icon/system/regular/robot.svg';
 import AgentIcon from '@icon/system/regular/sparkle.svg';
@@ -104,6 +105,22 @@ export const SETTINGS_TAB_GROUPS: SettingsTabGroup[] = [
         label: 'Connections',
         icon: PlugIcon,
         keywords: ['team', 'slack', 'github', 'import', 'app'],
+      },
+      {
+        tab: 'Team Transcription',
+        label: 'Transcription',
+        icon: MicrophoneIcon,
+        keywords: [
+          'team',
+          'speech',
+          'stt',
+          'dictation',
+          'calls',
+          'transcript',
+          'whisper',
+          'parakeet',
+          'language',
+        ],
       },
     ],
   },
@@ -283,6 +300,7 @@ const SETTINGS_TAB_SLUGS: Record<SettingsTab, string> = {
   Team: 'team',
   'Team Members': 'team-members',
   'Team Connections': 'team-connections',
+  'Team Transcription': 'team-transcription',
   Calendar: 'calendar',
   Tags: 'tags',
   CRM: 'crm',
@@ -347,6 +365,7 @@ export const useSettingsTabAvailable = () => {
       case 'Team':
       case 'Team Members':
       case 'Team Connections':
+      case 'Team Transcription':
       case 'Tags':
         return true;
       // CRM is still rolling out (Macro-internal only); keep the settings tab

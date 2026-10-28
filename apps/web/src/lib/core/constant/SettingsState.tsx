@@ -35,6 +35,7 @@ export type SettingsTab =
   | 'Team'
   | 'Team Members'
   | 'Team Connections'
+  | 'Team Transcription'
   | 'Tags'
   | 'CRM'
   | 'Connected'

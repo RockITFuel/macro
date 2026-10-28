@@ -137,6 +137,44 @@ pub struct Transcript {
     pub duration_seconds: f32,
 }
 
+/// Where a recording is transcribed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SttTarget {
+    /// OpenAI Whisper (`OPENAI_API_KEY`).
+    Cloud,
+    /// An OpenAI-compatible API such as the self-hosted local speech-to-text
+    /// gateway, called with the server's `DICTATION_STT_API_KEY`.
+    Local {
+        /// Base URL, e.g. `http://macro-stt-hub:8790/v1`.
+        api_base: String,
+        /// Model family the gateway routes to (`parakeet`, `whisper`).
+        model: String,
+    },
+}
+
+/// How dictation behaves for one user, resolved per request from their
+/// team's transcription settings with the server env as fallback.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DictationRoute {
+    /// False when the team turned transcription off.
+    pub enabled: bool,
+    /// Provider to send the recording to.
+    pub target: SttTarget,
+    /// Language hint used when the client sends none.
+    pub default_language: Option<LanguageHint>,
+}
+
+impl DictationRoute {
+    /// Dictation on, with OpenAI and no language preference.
+    pub fn cloud() -> Self {
+        Self {
+            enabled: true,
+            target: SttTarget::Cloud,
+            default_language: None,
+        }
+    }
+}
+
 /// Errors exposed by the dictation use case.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum DictationError {
@@ -155,6 +193,9 @@ pub enum DictationError {
     /// Malformed language hint.
     #[error("Language must be a two-letter ISO 639-1 code")]
     InvalidLanguage,
+    /// The user's team turned transcription off in its settings.
+    #[error("Dictation is turned off for your team")]
+    Disabled,
     /// Provider concurrency guard, independent of per-user rate limits.
     #[error("Dictation is busy. Please try again")]
     Busy,

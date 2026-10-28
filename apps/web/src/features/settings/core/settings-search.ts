@@ -228,6 +228,12 @@ const SETTINGS: Setting[] = [
     keywords: 'slack export channels messages history team',
   },
   {
+    tab: 'Team Transcription',
+    title: 'Transcription provider',
+    target: 'Transcription',
+    keywords: 'speech to text dictation calls local cloud hub model language',
+  },
+  {
     tab: 'Tags',
     title: 'Personal tags',
     target: 'Personal',

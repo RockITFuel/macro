@@ -15,7 +15,9 @@ in-call chat.
   `calendar_events`/`calendar_scheduling` meeting links).
 - `src/inbound/axum_router.rs`, `src/inbound/stale_call_sweeper.rs`: HTTP routes
   and the sweeper that ends abandoned calls.
-- `src/outbound/livekit_rtc_client.rs`: LiveKit adapter.
+- `src/outbound/livekit_rtc_client.rs`: LiveKit adapter; dispatches the
+  transcription agent unless its `CallTranscriptionGate` (the call creator's
+  team transcription settings, wired in `document_storage_service`) says no.
 - `src/outbound/pg_call_repo.rs`, `src/outbound/pg_voice_repo.rs`: Postgres.
 - `src/outbound/ai_call_summarizer.rs`, `src/outbound/s3_recording_storage.rs`:
   call recording/summarization.
