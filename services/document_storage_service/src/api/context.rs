@@ -843,14 +843,33 @@ pub(crate) type DssDictationState = dictation::inbound::axum_router::DictationRo
     dictation::domain::DictationServiceImpl<
         dictation::outbound::WhisperTranscriber,
         dictation::outbound::SymphoniaRecordingInspector,
+        crate::transcription::SettingsDictationRouting<DssTranscriptionSettingsService>,
     >,
     DssWebhookRateLimiter,
     AuthorizationService,
 >;
 
+/// Team transcription settings (Settings › Team › Transcription).
+pub(crate) type DssTranscriptionSettingsService =
+    transcription_settings::domain::service::TranscriptionSettingsServiceImpl<
+        transcription_settings::outbound::pg_repo::PgTranscriptionSettingsRepo,
+        transcription_settings::outbound::entity_access_teams::EntityAccessTeams<
+            EntityAccessService,
+        >,
+    >;
+
+/// Type alias for the transcription settings router state.
+pub(crate) type DssTranscriptionSettingsState =
+    transcription_settings::inbound::axum_router::TranscriptionSettingsRouterState<
+        DssTranscriptionSettingsService,
+        EntityAccessService,
+        AuthorizationService,
+    >;
+
 #[derive(Clone, FromRef)]
 pub(crate) struct ApiContext {
     pub dictation_state: DssDictationState,
+    pub transcription_settings_state: DssTranscriptionSettingsState,
     pub db: PgPool,
     pub readonly_db: ReadOnlyPool,
     pub redis_client: Arc<Redis>,

@@ -1,6 +1,8 @@
 //! Ports: the use case exposed to inbound adapters and the capability it needs.
 
-use super::models::{DictationError, LanguageHint, Recording, Transcript};
+use super::models::{
+    DictationError, DictationRoute, LanguageHint, Recording, SttTarget, Transcript,
+};
 use bytes::Bytes;
 use macro_user_id::user_id::MacroUserIdStr;
 use std::{future::Future, time::Duration};
@@ -19,11 +21,32 @@ pub trait TranscriptionProvider: Send + Sync + 'static {
     /// Model identifier used by the shared pricing and usage recorder.
     fn model_id(&self) -> &'static str;
 
-    /// Transcribe a validated in-memory recording.
+    /// Transcribe a validated in-memory recording at `target`.
     fn transcribe(
         &self,
         recording: Recording,
+        target: &SttTarget,
     ) -> impl Future<Output = Result<Transcript, DictationError>> + Send;
+}
+
+/// Resolves where and whether a user's dictation runs (their team's
+/// transcription settings, falling back to the server env).
+pub trait DictationRouting: Send + Sync + 'static {
+    /// The route for `user`'s next recording.
+    fn route(
+        &self,
+        user: &MacroUserIdStr<'static>,
+    ) -> impl Future<Output = Result<DictationRoute, DictationError>> + Send;
+}
+
+/// A fixed route, for wiring without team settings and for tests.
+impl DictationRouting for DictationRoute {
+    async fn route(
+        &self,
+        _user: &MacroUserIdStr<'static>,
+    ) -> Result<DictationRoute, DictationError> {
+        Ok(self.clone())
+    }
 }
 
 /// The dictation use case, called by inbound adapters on behalf of an

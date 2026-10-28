@@ -33,7 +33,7 @@ impl<
         let span = tracing::info_span!("start_channel_call", call_id = %call.id, %channel_id);
         tokio::spawn(async move {
             let transcription = async {
-                self.rtc_client.dispatch_transcription_agent(&call.room_name).await
+                self.rtc_client.dispatch_transcription_agent(&call.room_name, &call.created_by).await
                     .inspect_err(|error| tracing::error!(error=?error, "failed to dispatch transcription agent")).ok();
             };
             let recording = meetings::start_meeting_recording(&self.repo, self.rtc_client.as_ref(), call.id, &call.room_name, self.egress_s3_config.as_ref());

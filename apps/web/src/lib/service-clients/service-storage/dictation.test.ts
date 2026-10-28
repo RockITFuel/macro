@@ -34,6 +34,7 @@ describe('dictation HTTP adapter', () => {
     [503, '-1', 'HTTP_ERROR'],
     [503, 'nonsense', 'HTTP_ERROR'],
     [429, '1', 'DICTATION_RATE_LIMITED'],
+    [403, null, 'DICTATION_DISABLED'],
     [400, null, 'HTTP_ERROR'],
     [502, '1', 'HTTP_ERROR'],
   ])(

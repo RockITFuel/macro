@@ -762,11 +762,26 @@ pub trait CallRtcClient: Send + Sync + 'static {
 
     /// Dispatch the transcription agent to a room (best-effort).
     ///
-    /// Returns `Ok(())` if dispatch succeeded or if no agent is configured.
+    /// Returns `Ok(())` if dispatch succeeded, if no agent is configured, or
+    /// if the team of `created_by` (the user who started the call) turned
+    /// transcription off.
     fn dispatch_transcription_agent(
         &self,
         room_name: &str,
+        created_by: &str,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
+
+/// Decides per call whether the transcription agent joins, from the team
+/// settings of the user who started it. Object-safe (boxed future) because
+/// the LiveKit adapter holds it as `Arc<dyn CallTranscriptionGate>`.
+pub trait CallTranscriptionGate: Send + Sync + 'static {
+    /// Whether calls started by `created_by` are transcribed. Implementations
+    /// fall back to "on" when the settings cannot be read.
+    fn transcription_enabled<'a>(
+        &'a self,
+        created_by: &'a str,
+    ) -> std::pin::Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
 }
 
 /// Service interface for call operations.

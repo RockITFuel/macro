@@ -228,3 +228,51 @@ async fn guest_tokens_preserve_names_and_only_grant_the_room() {
     assert_eq!(event.guest_identity, Some(guest_id));
     assert_eq!(event.participant_identity, None);
 }
+
+struct FixedGate {
+    enabled: bool,
+    asked: std::sync::Mutex<Vec<String>>,
+}
+
+impl crate::domain::ports::CallTranscriptionGate for FixedGate {
+    fn transcription_enabled<'a>(
+        &'a self,
+        created_by: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
+        self.asked.lock().unwrap().push(created_by.to_owned());
+        Box::pin(async move { self.enabled })
+    }
+}
+
+#[tokio::test]
+async fn a_team_that_turned_transcription_off_gets_no_agent() {
+    let gate = std::sync::Arc::new(FixedGate {
+        enabled: false,
+        asked: Default::default(),
+    });
+    // The unreachable LiveKit URL proves no dispatch request is attempted.
+    let client =
+        client_with_transcription_agent("macro-transcriber").with_transcription_gate(gate.clone());
+
+    client
+        .dispatch_transcription_agent("room", "macro|owner@example.com")
+        .await
+        .unwrap();
+
+    assert_eq!(*gate.asked.lock().unwrap(), vec!["macro|owner@example.com"]);
+}
+
+#[tokio::test]
+async fn without_an_agent_name_the_gate_is_not_asked() {
+    let gate = std::sync::Arc::new(FixedGate {
+        enabled: true,
+        asked: Default::default(),
+    });
+    client()
+        .with_transcription_gate(gate.clone())
+        .dispatch_transcription_agent("room", "macro|owner@example.com")
+        .await
+        .unwrap();
+
+    assert!(gate.asked.lock().unwrap().is_empty());
+}

@@ -207,8 +207,11 @@ Whisper. Here both can run on our own machines instead: a Redis queue on
 morgo-warsaw (Tailscale only), a router, and Parakeet workers on luka-mini
 (CPU), the MacBook (MLX) and, as a live-only fallback, Warsaw. Off until
 `LIVEKIT_TRANSCRIPTION_AGENT_NAME=macro-transcriber` and
-`DICTATION_STT_API_BASE`/`DICTATION_STT_API_KEY` are in the env file. Models,
-routing rules and rollout: [services/transcription/LOCAL_STT.md](services/transcription/LOCAL_STT.md).
+`DICTATION_STT_API_BASE`/`DICTATION_STT_API_KEY` are in the env file (on in
+production since 2026-10-28). Those are the defaults; team owners and admins
+change on/off, provider, hub URL, model and language in Settings › Team ›
+Transcription. Models, routing rules and rollout:
+[services/transcription/LOCAL_STT.md](services/transcription/LOCAL_STT.md).
 
 ## Release gate
 
@@ -268,3 +271,11 @@ screenshots of failures in `artifacts/`). Staging stays up at
   `/srv/macro-deploy/deploy.sh` on morgo-warsaw. The stack is instance `prod`,
   ports 47000+ on 127.0.0.1; Traefik routes come from
   `/etc/dokploy/traefik/dynamic/macro-self-hosted.yml`.
+- `deploy.sh <sha> update` does not apply env changes when the binaries are
+  unchanged: it notes "binaries unchanged — mounts left as-is" and leaves the
+  running services alone. After re-rendering `macro.env` for the same commit,
+  take a backup (`deploy.sh <sha> backup`) and run `deploy.sh <sha> start`,
+  which recreates the services with the new env and keeps the data. Check with
+  `docker exec macro-prod-document_storage_service-1 printenv <VAR>` (presence
+  only for secrets). Before re-rendering, make sure every key in `macro.env` is
+  in the 1Password item, or the render drops it.

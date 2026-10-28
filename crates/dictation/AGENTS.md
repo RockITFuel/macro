@@ -12,8 +12,12 @@ and returns text — nothing is stored.
 - `src/domain/models.rs`: `Recording`/`Transcript` value objects and limits
   (`MAX_AUDIO_BYTES`, `MAX_AUDIO_DURATION`).
 - `src/domain/ports.rs`: `TranscriptionProvider` / `RecordingInspector` traits.
-- `src/outbound/whisper.rs`: the OpenAI Whisper adapter; `DICTATION_STT_API_BASE`
-  points it at any OpenAI-compatible API (self-host: `services/transcription/LOCAL_STT.md`).
+- `src/domain/ports.rs` `DictationRouting`: per-user on/off, provider target
+  and default language, resolved by `document_storage_service` from the team's
+  transcription settings (`crates/transcription_settings`).
+- `src/outbound/whisper.rs`: the Whisper adapter; a `SttTarget::Local` sends
+  the recording to an OpenAI-compatible API with `DICTATION_STT_API_KEY`
+  (self-host: `services/transcription/LOCAL_STT.md`).
 - `src/inbound/axum_router.rs`: the authenticated, rate-limited HTTP endpoint.
 
 ## Scope
@@ -27,7 +31,7 @@ and returns text — nothing is stored.
 
 - Depends on: `ai_usage`, `macro_authorization` + `rate_limit` (inbound
   feature), `async-openai` + `opus-pure`/`symphonia` (outbound feature).
-- Used by: `document_storage_service`.
+- Used by: `document_storage_service` (which wires `DictationRouting` to `transcription_settings`).
 
 ## Recipes
 

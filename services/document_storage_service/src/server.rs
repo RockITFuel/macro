@@ -754,12 +754,42 @@ pub async fn run() -> anyhow::Result<()> {
         "LIVEKIT_TRANSCRIPTION_AGENT_NAME is set but INTERNAL_CALL_SECRET is missing — \
          the transcription agent will not be able to submit transcripts"
     );
+    // Team transcription settings, with the env as every team's default.
+    let transcription_env = {
+        use dictation::outbound::whisper::{
+            DictationSttAllowedHosts, DictationSttApiBase, DictationSttApiKey,
+        };
+        let base = DictationSttApiBase::new();
+        let key = DictationSttApiKey::new();
+        let allowed = DictationSttAllowedHosts::new();
+        transcription_settings::domain::models::TranscriptionEnv::new(
+            base.as_ref().and_then(|v| v.value()),
+            key.as_ref()
+                .and_then(|v| v.value())
+                .is_some_and(|v| !v.trim().is_empty()),
+            !config.openai_api_key.as_ref().trim().is_empty(),
+            transcription_agent_name.as_deref(),
+            allowed.as_ref().and_then(|v| v.value()),
+        )
+    };
+    let transcription_settings_service = Arc::new(
+        transcription_settings::domain::service::TranscriptionSettingsServiceImpl::new(
+            transcription_settings::outbound::pg_repo::PgTranscriptionSettingsRepo::new(db.clone()),
+            transcription_settings::outbound::entity_access_teams::EntityAccessTeams(
+                entity_access_service.clone(),
+            ),
+            transcription_env,
+        ),
+    );
     let livekit_rtc_client = LivekitRtcClient::new(
         config.livekit_server_url.as_ref(),
         config.livekit_api_key.as_ref(),
         config.livekit_api_secret.as_ref(),
         transcription_agent_name,
-    );
+    )
+    .with_transcription_gate(Arc::new(crate::transcription::SettingsCallGate(
+        transcription_settings_service.clone(),
+    )));
     let call_connection_service =
         ConnectionServiceImpl::new(entity_access_service.clone(), connection_gateway.clone());
     let call_repo = PgCallRepo::new(db.clone());
@@ -1185,9 +1215,10 @@ pub async fn run() -> anyhow::Result<()> {
         "Cohere API key is required for task dedup reranking",
     );
     let dictation_state = dictation::inbound::axum_router::DictationRouterState::new(
-        dictation::domain::DictationServiceImpl::new(
+        dictation::domain::DictationServiceImpl::with_routing(
             dictation::outbound::WhisperTranscriber::from_env(&config.openai_api_key)?,
             dictation::outbound::SymphoniaRecordingInspector,
+            crate::transcription::SettingsDictationRouting(transcription_settings_service.clone()),
             ai_usage::pg_recorder_with_enforcement(db.clone(), config.enable_ai_usage_enforcement),
         ),
         RateLimitServiceImpl {
@@ -2328,6 +2359,12 @@ pub async fn run() -> anyhow::Result<()> {
             access: entity_access_service.clone(),
             authorization: authorization_state.clone(),
         },
+        transcription_settings_state:
+            transcription_settings::inbound::axum_router::TranscriptionSettingsRouterState {
+                service: transcription_settings_service,
+                entity_access_service: entity_access_service.clone(),
+                authorization_state: authorization_state.clone(),
+            },
         crm_state: crm::inbound::axum_router::CrmRouterState {
             service: Arc::new(crm_service),
             stage_service: Arc::new(crm::domain::stages::CrmStageServiceImpl::new(

@@ -316,6 +316,7 @@ async fn maps_domain_errors_to_status_codes_without_leaking_content() {
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
         ),
         (DictationError::Busy, StatusCode::SERVICE_UNAVAILABLE),
+        (DictationError::Disabled, StatusCode::FORBIDDEN),
         (DictationError::Provider, StatusCode::BAD_GATEWAY),
     ];
     for (error, status) in cases {

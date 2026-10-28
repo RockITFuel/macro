@@ -214,6 +214,8 @@ use utoipa::OpenApi;
     modifiers(&FormsApiAddon),
     paths(
         dictation::inbound::axum_router::transcribe_handler,
+        transcription_settings::inbound::axum_router::get_handler,
+        transcription_settings::inbound::axum_router::update_handler,
         health::health_handler,
         calendar_events::inbound::axum_router::list_occurrences,
         calendar_events::inbound::axum_router::mention_previews,
@@ -941,6 +943,13 @@ use utoipa::OpenApi;
             webhook::domain::models::WebhookStatus,
             webhook::domain::models::WebhookValidationTestEvent,
             dictation::inbound::axum_router::TranscribeResponse,
+            transcription_settings::inbound::axum_router::TranscriptionSettingsResponse,
+            transcription_settings::inbound::axum_router::StoredTranscriptionSettings,
+            transcription_settings::inbound::axum_router::UpdateTranscriptionSettingsRequest,
+            transcription_settings::domain::models::EffectiveTranscriptionSettings,
+            transcription_settings::domain::models::TranscriptionEnvStatus,
+            transcription_settings::domain::models::SttProvider,
+            transcription_settings::domain::models::SttModel,
 
             DocumentSubType,
 

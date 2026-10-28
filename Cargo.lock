@@ -6593,6 +6593,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
+ "transcription_settings",
  "tungstenite 0.27.0",
  "unicode-segmentation",
  "urlencoding",
@@ -20406,6 +20407,31 @@ dependencies = [
  "tracing-subscriber",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "transcription_settings"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "entity_access",
+ "macro_authorization",
+ "macro_db_migrator",
+ "macro_user_id",
+ "model-error-response",
+ "rootcause",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "strum 0.27.2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "utoipa",
+ "uuid",
+ "workspace-hack",
 ]
 
 [[package]]

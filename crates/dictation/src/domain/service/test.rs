@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::models::{AudioFormat, MAX_AUDIO_BYTES};
+use crate::domain::models::{AudioFormat, DictationRoute, MAX_AUDIO_BYTES, SttTarget};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
@@ -14,6 +14,7 @@ struct FakeProvider {
     fails: bool,
     calls: AtomicUsize,
     seen: Mutex<Vec<(AudioFormat, Option<String>)>>,
+    targets: Mutex<Vec<SttTarget>>,
 }
 
 impl TranscriptionProvider for Arc<FakeProvider> {
@@ -21,8 +22,13 @@ impl TranscriptionProvider for Arc<FakeProvider> {
         "whisper-1"
     }
 
-    async fn transcribe(&self, recording: Recording) -> Result<Transcript, DictationError> {
+    async fn transcribe(
+        &self,
+        recording: Recording,
+        target: &SttTarget,
+    ) -> Result<Transcript, DictationError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        self.targets.lock().unwrap().push(target.clone());
         if self.fails {
             return Err(DictationError::Provider);
         }
@@ -267,4 +273,90 @@ async fn records_provider_duration_only_for_successful_transcriptions() {
             duration: Duration::from_secs(2)
         }
     );
+}
+
+fn routed_service(
+    route: DictationRoute,
+) -> (
+    DictationServiceImpl<Arc<FakeProvider>, FakeInspector, DictationRoute>,
+    Arc<FakeProvider>,
+) {
+    let provider = Arc::new(FakeProvider::default());
+    (
+        DictationServiceImpl::with_routing(
+            provider.clone(),
+            FakeInspector(Ok(Duration::from_secs(2))),
+            route,
+            Arc::new(ai_usage::NoOpUsageRecorder),
+        ),
+        provider,
+    )
+}
+
+fn local_route() -> DictationRoute {
+    DictationRoute {
+        enabled: true,
+        target: SttTarget::Local {
+            api_base: "http://macro-stt-hub:8790/v1".into(),
+            model: "parakeet".into(),
+        },
+        default_language: Some("nl".parse().unwrap()),
+    }
+}
+
+#[tokio::test]
+async fn a_team_that_turned_transcription_off_gets_disabled_without_a_provider_call() {
+    let (service, provider) = routed_service(DictationRoute {
+        enabled: false,
+        ..local_route()
+    });
+    let result = service
+        .transcribe(user(), Bytes::from_static(OGG_HEADER), language())
+        .await;
+    assert_eq!(result, Err(DictationError::Disabled));
+    assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn the_routed_target_reaches_the_provider() {
+    let (service, provider) = routed_service(local_route());
+    service
+        .transcribe(user(), Bytes::from_static(OGG_HEADER), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        *provider.targets.lock().unwrap(),
+        vec![local_route().target]
+    );
+}
+
+#[tokio::test]
+async fn the_team_language_applies_only_when_the_client_sends_none() {
+    let (service, provider) = routed_service(local_route());
+    service
+        .transcribe(user(), Bytes::from_static(OGG_HEADER), None)
+        .await
+        .unwrap();
+    service
+        .transcribe(user(), Bytes::from_static(OGG_HEADER), language())
+        .await
+        .unwrap();
+    let languages: Vec<_> = provider
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(_, language)| language.clone())
+        .collect();
+    assert_eq!(languages, vec![Some("nl".into()), Some("en".into())]);
+}
+
+#[tokio::test]
+async fn the_default_service_sends_dictation_to_openai() {
+    let (service, provider) = service();
+    service
+        .transcribe(user(), Bytes::from_static(OGG_HEADER), None)
+        .await
+        .unwrap();
+    assert_eq!(*provider.targets.lock().unwrap(), vec![SttTarget::Cloud]);
 }

@@ -35,11 +35,13 @@ describe('settings navigation', () => {
       'Team',
       'Team Members',
       'Team Connections',
+      'Team Transcription',
     ]);
     // Old team links keep opening the team's general page.
     expect(settingsSlugToTab('team')).toBe('Team');
     expect(settingsSlugToTab('team-members')).toBe('Team Members');
     expect(settingsSlugToTab('team-connections')).toBe('Team Connections');
+    expect(settingsSlugToTab('team-transcription')).toBe('Team Transcription');
   });
 
   it('groups blocks after the team and consolidates account and agent integrations', () => {
