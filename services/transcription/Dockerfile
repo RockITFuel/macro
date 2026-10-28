@@ -14,6 +14,10 @@ ENV PYTHONUNBUFFERED=1
 # Disable pip version check to speed up builds
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# CPU-only torch for resemblyzer: the default CUDA wheels make the image
+# 6.6 GB instead of 1.8 GB, and nothing here uses a GPU.
+ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
+
 # Keep the Hugging Face cache inside /app so downloaded plugin models
 # (e.g. the turn detector) survive the build→production COPY step.
 ENV HF_HOME=/app/.cache/huggingface

@@ -13,9 +13,10 @@ Rules, in order:
 5. Not overloaded: machine load at or below its `max_cpu_load` and enough
    free memory.
 
-Among the rest the lowest estimated finish time wins: audio length times the
-worker's measured real-time factor, stretched by its in-flight jobs and CPU
-load, plus a penalty per fallback tier. Ties go to the lower tier, then the
+Among the rest the lowest estimated finish time wins: the worker's measured
+round trip to Redis, plus audio length times its measured real-time factor
+stretched by its in-flight jobs and CPU load, plus a small penalty per
+fallback tier. Ties go to the lower tier, then the
 worker id, so the order is deterministic.
 """
 
@@ -29,11 +30,15 @@ from .models import Job, JobKind, Priority, WorkerInfo
 @dataclass(frozen=True)
 class RouterConfig:
     heartbeat_ttl_s: float = 15.0
-    # Fixed cost per job: queue round trips, audio transfer, decoding.
-    overhead_s: float = 0.3
-    # Added per fallback tier, so a tier-2 worker only wins when the others
-    # are unavailable or far slower.
-    tier_penalty_s: float = 2.0
+    # Fixed cost per job on the worker (decoding, model call setup).
+    overhead_s: float = 0.05
+    # Network round trips to Redis on a job's critical path: the assignment
+    # travels to the worker (half) and the result back (half).
+    network_round_trips: float = 1.0
+    # Added per fallback tier: breaks near-ties towards the preferred
+    # machines, but small enough that a nearby idle fallback (Warsaw, next
+    # to Redis) wins short live jobs from workers 200 ms away.
+    tier_penalty_s: float = 0.05
     # Slots per worker that recordings may not use (live work only).
     live_reserved_slots: int = 1
     # Job timeout: max(min, factor * estimated processing time).
@@ -103,6 +108,7 @@ def processing_estimate_s(job: Job, worker: WorkerInfo, in_flight: int) -> float
 def eta_s(job: Job, worker: WorkerInfo, in_flight: int, cfg: RouterConfig) -> float:
     return (
         cfg.overhead_s
+        + cfg.network_round_trips * worker.rtt_s
         + processing_estimate_s(job, worker, in_flight)
         + worker.tier * cfg.tier_penalty_s
     )

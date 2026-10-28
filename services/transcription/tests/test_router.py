@@ -135,6 +135,43 @@ class RouteTest(unittest.TestCase):
         workers = [worker("b"), worker("a")]
         self.assertEqual(route(job(), workers, {}, NOW, CFG).ranked, ["a", "b"])
 
+    def test_nearby_idle_fallback_wins_short_live_jobs(self):
+        far = {"rtt_s": 0.2}
+        workers = [
+            worker("mac", **{**MAC, **far, "rtf": 0.02}),
+            worker("mini", **far, rtf=0.04),
+            worker("warsaw", **{**WARSAW, "rtf": 0.1, "rtt_s": 0.001, "cpu_load": 0.2}),
+        ]
+        self.assertEqual(
+            route(job(duration=1.0), workers, {}, NOW, CFG).worker_id, "warsaw"
+        )
+        long_one = route(job(duration=8.0), workers, {}, NOW, CFG)
+        self.assertEqual(long_one.worker_id, "mac")
+        self.assertEqual(long_one.ranked[-1], "warsaw")
+
+    def test_load_guard_still_keeps_busy_warsaw_out(self):
+        workers = [
+            worker("mac", **{**MAC, "rtt_s": 0.2}),
+            worker("warsaw", **{**WARSAW, "rtf": 0.1, "rtt_s": 0.001, "cpu_load": 0.6}),
+        ]
+        decision = route(job(duration=1.0), workers, {}, NOW, CFG)
+        self.assertEqual(decision.ranked, ["mac"])
+        self.assertEqual(
+            route(job(duration=1.0), workers[1:], {}, NOW, CFG).reason, "busy"
+        )
+
+    def test_round_trip_counts_in_the_estimate(self):
+        workers = [
+            worker("far", rtt_s=0.3, rtf=0.02),
+            worker("near", rtt_s=0.01, rtf=0.05),
+        ]
+        self.assertEqual(
+            route(job(duration=4.0), workers, {}, NOW, CFG).worker_id, "near"
+        )
+        self.assertEqual(
+            route(job(duration=30.0), workers, {}, NOW, CFG).worker_id, "far"
+        )
+
     def test_timeouts_scale_with_audio_and_speed(self):
         mini = worker("mini")
         self.assertEqual(timeout_s(job(), mini, CFG), CFG.min_timeout_chunk_s)
