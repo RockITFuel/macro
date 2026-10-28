@@ -8,5 +8,6 @@
 | [`design/`](design/) | Proposals, plans, and audits; check each doc's status. |
 | [`runbooks/`](runbooks/) | Rollouts, migrations, imports, and demos with operational steps. |
 | [`agent-guide/`](agent-guide/) | How browser agents operate the app, not how to develop it. |
+| [`convex/`](convex/index.md) | Convex backend rebuild: decisions, user-facing feature map, and feature-to-backend graph. |
 
 Docs that belong to one app, service, or crate live next to its code.
