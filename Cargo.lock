@@ -18617,11 +18617,13 @@ name = "soup_realtime"
 version = "0.1.0"
 dependencies = [
  "agent_session",
+ "anyhow",
  "broadcast",
  "call",
  "channels",
  "chat",
  "chrono",
+ "connection",
  "documents",
  "email",
  "entity_access",
