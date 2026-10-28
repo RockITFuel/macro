@@ -25,6 +25,11 @@ self-hosted Convex deployment, while keeping the existing web frontend.
 7. **Conventions from solid-morgo:** every public function starts with the auth
    and policy check; one permissions package is the authority for server and UI;
    Better Auth owns identity and sessions, Convex owns product data.
+8. **Lists (Soup):** the frontend list layer is refactored to plain Convex
+   queries and mutations instead of reproducing the GraphQL Soup shapes, with the
+   same user-facing features (feature map is the parity check).
+9. **Identity:** FusionAuth is replaced by Better Auth with organizations;
+   Gmail, Outlook and GitHub keep their own OAuth grants.
 
 ## Platform limits that shape the design
 
