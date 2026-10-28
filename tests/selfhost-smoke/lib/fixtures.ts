@@ -35,7 +35,9 @@ const IGNORED: { re: RegExp; why: string; known?: boolean }[] = [
     // The self-host websocket-service is the upstream Bun stub: it answers every
     // message with the plain text `ping`, which the storage websocket client
     // JSON.parses (apps/web/src/lib/service-clients/service-storage/websocket.ts).
-    re: /^pageerror: Unexpected token 'p', "ping" is not valid JSON$/,
+    // The page error is also echoed by the app's observability handler as a
+    // console error tagged as an unhandled rejection.
+    re: /^(pageerror: |console: \[observability\] )Unexpected token 'p', "ping" is not valid JSON($| \{error\.source: unhandledrejection, exception\.type: SyntaxError,)/,
     known: true,
     why: 'websocket-service stub (upstream Bun) answers `ping`, which the storage websocket client JSON.parses',
   },
