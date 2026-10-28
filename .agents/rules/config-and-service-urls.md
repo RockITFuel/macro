@@ -1,5 +1,5 @@
 ---
-description: Configuration, env vars, secrets, and service URLs each have one source per runtime; never invent env vars or hardcode hosts.
+description: Configuration, env vars, secrets, and service URLs each have one source per runtime; operator-tunable settings live in the app's settings page; never invent env vars or hardcode hosts.
 globs:
 alwaysApply: true
 ---
@@ -9,6 +9,17 @@ alwaysApply: true
 Config has exactly one source per runtime. Do not add a second one "just in case",
 read a plain env var as a fallback, or hardcode a host. A missing value fails
 startup loudly.
+
+## Operator settings
+
+- **CS-73** Configuration that operators may want to change is a setting in the
+  app's settings page, stored in the database, with env only as bootstrap
+  fallback and for secrets. Store only what was changed (`NULL` = use the env
+  value), read the env defaults once at startup, gate edits by role (team
+  owner/admin for team settings), and show secrets only as set / not set.
+  Example: `crates/transcription_settings` (Settings › Team › Transcription).
+  This is the one sanctioned "database over env" pair; it does not license env
+  fallbacks for anything else.
 
 ## Rust services
 
