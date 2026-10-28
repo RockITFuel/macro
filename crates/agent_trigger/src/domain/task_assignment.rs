@@ -164,7 +164,7 @@ where
         else {
             continue;
         };
-        let discussion_id = discussion_id(assignment.event_id, bot_id);
+        let discussion_id = bot_scoped_id(assignment.event_id, bot_id);
         if trigger
             .assignment_has_session(discussion_id, bot_id)
             .await?
@@ -255,9 +255,9 @@ fn assigned_at(event_id: Uuid) -> AgentResult<DateTime<Utc>> {
         })
 }
 
-/// Derive one replay-stable UUIDv7 per assigned bot, retaining the event timestamp.
+/// Derive one replay-stable UUIDv7 per bot, retaining the event timestamp.
 /// The hashed random bits keep simultaneous agents in separate discussion threads.
-fn discussion_id(event_id: Uuid, bot_id: BotId) -> Uuid {
+pub(crate) fn bot_scoped_id(event_id: Uuid, bot_id: BotId) -> Uuid {
     use sha2::{Digest, Sha256};
     let hash = Sha256::new()
         .chain_update(event_id.as_bytes())

@@ -9,9 +9,11 @@ use agent_session::domain::{
         PrepareRoutineSession, PromptRoutineSession, RoutineActionStatus, RoutineSessionAction,
         RoutineSessionError, RoutineSessions, ValidateRoutineSession,
     },
+    work_chain::{ChainLink, WorkChain},
 };
 use anyhow::{Context, Result};
 use bot_id::BotId;
+use chrono::Utc;
 use chrono_tz::Tz;
 use macro_user_id::user_id::MacroUserIdStr;
 use trigger_context::{
@@ -19,11 +21,15 @@ use trigger_context::{
 };
 
 use super::{
+    event_runs::PendingEventRun,
     event_trigger::{
         ActionTrigger, ConditionRequirement, EventFilters, EventReference, RoutineTrigger,
     },
     execution::ExecutionHandle,
-    models::{AgentTask, ExecutionResource, ExecutionResourceType, Schedule, ScheduledAction},
+    models::{
+        AgentTask, ExecutionResource, ExecutionResourceType, MAX_ACTION_TIME, Schedule,
+        ScheduledAction,
+    },
     ports::{RoutineEventReader, RoutineRun, ScheduledAgentRunner},
 };
 
@@ -39,11 +45,24 @@ const SCHEDULED_GUIDANCE: &str = "You are executing a user routine that has alre
 pub struct TargetRunner<Sessions, Events> {
     sessions: Arc<Sessions>,
     events: Arc<Events>,
+    chain: Option<Arc<dyn WorkChain>>,
 }
 
 impl<Sessions, Events> TargetRunner<Sessions, Events> {
     pub fn new(sessions: Arc<Sessions>, events: Arc<Events>) -> Self {
-        Self { sessions, events }
+        Self {
+            sessions,
+            events,
+            chain: None,
+        }
+    }
+
+    /// Record each run as bot work, so the activity it causes can be traced
+    /// back to it: a routine never runs for its own output, and chains of
+    /// bots triggering bots stop at their limit.
+    pub fn with_work_chain(mut self, chain: Arc<dyn WorkChain>) -> Self {
+        self.chain = Some(chain);
+        self
     }
 }
 
@@ -121,18 +140,42 @@ impl<Sessions: RoutineSessions, Events: RoutineEventReader> ScheduledAgentRunner
         );
         let identity = session_action(action, handle, bot_id)?;
         let context = self.context(action, &task, &identity.owner, firing).await?;
-        let accepted = self
-            .sessions
-            .prompt(PromptRoutineSession {
-                action: identity.clone(),
-                prompt: first_prompt(&task, context.as_ref(), firing.event())?,
-                context,
-            })
-            .await?;
-        if accepted.action_id != identity.action_id {
-            return Err(RoutineSessionError::PromptDeliveryUnknown.into());
+        let started_at = Utc::now();
+        let link = ChainLink {
+            id: handle.action_id,
+            bot: bot_id,
+            user: identity.owner.clone(),
+            hop: firing.hop(),
+            routine_id: action.id,
+            started_at,
+            ends_at: started_at + MAX_ACTION_TIME,
+        };
+        if let Some(chain) = &self.chain {
+            chain.start(link).await?;
         }
-        self.await_completion(identity).await
+        let result = async {
+            let accepted = self
+                .sessions
+                .prompt(PromptRoutineSession {
+                    action: identity.clone(),
+                    prompt: first_prompt(&task, context.as_ref(), firing.event())?,
+                    context,
+                })
+                .await?;
+            if accepted.action_id != identity.action_id {
+                return Err(RoutineSessionError::PromptDeliveryUnknown.into());
+            }
+            self.await_completion(identity).await
+        }
+        .await;
+        // An unclosed window only attributes more activity to this run, which
+        // can stop a chain early but never lets one run longer.
+        if let Some(chain) = &self.chain
+            && let Err(error) = chain.finish(handle.action_id, Utc::now()).await
+        {
+            tracing::warn!(error = ?error, action_id = ?action.id, "bot work window left open");
+        }
+        result
     }
 
     async fn cancel(&self, action: &ScheduledAction, handle: &ExecutionHandle) -> Result<()> {
@@ -164,7 +207,7 @@ impl<Sessions: RoutineSessions, Events: RoutineEventReader> TargetRunner<Session
             RoutineRun::Event(run) => match self.events.read_event(owner, run).await {
                 Ok(event) => RoutineFiring::Event {
                     event: Box::new(event),
-                    conditions: conditions(&action.trigger, &run.pending.event),
+                    conditions: conditions(&action.trigger, &run.pending),
                 },
                 Err(error) => {
                     tracing::warn!(
@@ -314,10 +357,10 @@ fn triggers(trigger: &ActionTrigger) -> Vec<ContextTrigger> {
 }
 
 /// The questions the event was checked against before the run started.
-fn conditions(trigger: &ActionTrigger, event: &EventReference) -> Vec<String> {
+fn conditions(trigger: &ActionTrigger, run: &PendingEventRun) -> Vec<String> {
     match trigger
         .event_filters()
-        .map(|filters| filters.condition_requirement(event))
+        .map(|filters| filters.condition_requirement(&run.event, run.hop > 0))
     {
         Some(ConditionRequirement::AnyOf(conditions)) => conditions
             .iter()

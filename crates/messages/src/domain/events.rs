@@ -8,6 +8,7 @@
 use super::models::{Message, MessageParent, SimpleMention};
 use channel_sender::ChannelSender;
 use chrono::{DateTime, Utc};
+use macro_user_id::user_id::MacroUserIdStr;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -87,6 +88,17 @@ impl MessagePostedMetadata {
     pub fn root_id(&self) -> Uuid {
         self.root_id
     }
+
+    /// The user the post speaks for: its author, or the user whose
+    /// invocation produced a bot's post. `None` for guests and for bots that
+    /// acted for nobody.
+    pub fn acting_user(&self) -> Option<MacroUserIdStr<'static>> {
+        if let Some(user) = self.sender.as_user() {
+            return Some(user.clone());
+        }
+        self.sender.as_bot()?;
+        MacroUserIdStr::try_from(self.triggered_by.clone()?).ok()
+    }
 }
 
 /// One mentioned entity in a committed post; the full mention list travels on
@@ -104,6 +116,10 @@ pub struct MessageMentionedMetadata {
     pub root_id: Uuid,
     /// Message author; may be a bot.
     pub sender: ChannelSender<'static>,
+    /// User whose invocation produced a bot author's message. Absent from
+    /// facts published before it existed.
+    #[serde(default)]
+    pub triggered_by: Option<String>,
     /// Macro Markdown body.
     pub content: String,
     /// The mentioned entity this fact is about (`user`, `bot`, `document`, …).

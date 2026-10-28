@@ -75,6 +75,7 @@ fn service(count: usize, wait_for_shutdown: bool) -> Service {
         action_id: generate_uuid_v7(), revision: ConfigurationRevision::INITIAL,
         event: serde_json::from_value(json!({"event_id":generate_uuid_v7(), "event_name":"document.updated", "entity_id":generate_uuid_v7(), "message_id":null})).unwrap(),
         admitted_at: Utc::now(),
+        hop: 0,
     }).collect();
     Service {
         state,

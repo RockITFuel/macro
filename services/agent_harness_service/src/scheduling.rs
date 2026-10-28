@@ -15,6 +15,8 @@ use macro_authorization::{
 };
 use macro_service_urls::{ConnectionGatewayUrl, LexicalServiceUrl};
 pub mod config;
+use agent_session::domain::work_chain::WorkChain;
+use agent_session::outbound::work_chain::PgWorkChain;
 use config::Config;
 use scheduled_action::domain::event_runs::{
     PageSize, admission::EventAdmissionService, condition::ConditionGate,
@@ -120,10 +122,11 @@ pub async fn build(
         Arc::clone(&access),
         &config,
     )?);
-    let runner = Arc::new(TargetRunner::new(
-        Arc::clone(&sessions),
-        Arc::clone(&event_content),
-    ));
+    let work_chain: Arc<dyn WorkChain> = Arc::new(PgWorkChain::new(db.clone()));
+    let runner = Arc::new(
+        TargetRunner::new(Arc::clone(&sessions), Arc::clone(&event_content))
+            .with_work_chain(Arc::clone(&work_chain)),
+    );
     let dispatcher_executor = InProcessExecutor::new(
         Arc::clone(&repo),
         runner,
@@ -209,7 +212,8 @@ pub async fn build(
                 Arc::clone(&event_repo),
                 Arc::clone(&event_access),
                 PageSize::try_from(ADMISSION_PAGE_SIZE).expect("valid admission bound"),
-            );
+            )
+            .with_work_chain(Arc::clone(&work_chain));
             let brokers = brokers.clone();
             let shutdown = intake_shutdown.clone();
             async move {

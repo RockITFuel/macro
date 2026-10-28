@@ -178,6 +178,7 @@ pub(crate) fn subagent_toolset() -> AiToolSet {
         .add_subtoolset::<ToolPropertiesToolContext>(properties_toolset())
         .add_subtoolset::<ToolCallToolContext>(call_toolset())
         .add_tool::<ReadAgentSession, ToolReadAgentSessionContext>()
+        .add_tool::<agent_session::inbound::toolset::WaitAgentSession, ToolReadAgentSessionContext>()
         .add_tool::<agent_session::inbound::toolset::ReadAgentSessionSharing, ToolReadAgentSessionContext>()
         .add_tool::<agent_session::inbound::toolset::UpdateAgentSessionSharing, ToolReadAgentSessionContext>()
         .add_subtoolset::<ToolChannelToolContext>(channel_toolset())

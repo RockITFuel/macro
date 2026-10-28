@@ -9515,6 +9515,11 @@ export type MessageMentionedMetadata = {
      * Root identifier for a reply; absent for a root.
      */
     thread_id?: string | null;
+    /**
+     * User whose invocation produced a bot author's message. Absent from
+     * facts published before it existed.
+     */
+    triggered_by?: string | null;
 };
 
 /**

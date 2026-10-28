@@ -11,6 +11,7 @@
 - [AgentTask](type-aliases/AgentTask.md)
 - [AgentTaskAgent](type-aliases/AgentTaskAgent.md)
 - [AiAdmissionErrorBody](type-aliases/AiAdmissionErrorBody.md)
+- [BotActivity](type-aliases/BotActivity.md)
 - [ClientOptions](type-aliases/ClientOptions.md)
 - [ConditionResult](type-aliases/ConditionResult.md)
 - [CreateScheduledAction](type-aliases/CreateScheduledAction.md)

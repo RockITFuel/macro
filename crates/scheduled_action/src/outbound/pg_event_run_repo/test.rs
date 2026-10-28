@@ -71,7 +71,7 @@ async fn setup(pool: &PgPool) -> (PgEventRunRepo, Uuid, EventReference) {
 
 async fn admit(repo: &PgEventRunRepo, action_id: Uuid, event: &EventReference) {
     assert_eq!(
-        repo.admit(action_id, ConfigurationRevision::INITIAL, event)
+        repo.admit(action_id, ConfigurationRevision::INITIAL, event, 0)
             .await
             .unwrap(),
         AdmissionResult::Admitted,
@@ -139,8 +139,8 @@ async fn state(pool: &PgPool, key: EventRunKey) -> (String, Option<Value>, Optio
 async fn concurrent_duplicate_admission_and_cascade_cleanup(pool: PgPool) {
     let (repo, id, event) = setup(&pool).await;
     let (a, b) = tokio::join!(
-        repo.admit(id, ConfigurationRevision::INITIAL, &event),
-        repo.admit(id, ConfigurationRevision::INITIAL, &event),
+        repo.admit(id, ConfigurationRevision::INITIAL, &event, 0),
+        repo.admit(id, ConfigurationRevision::INITIAL, &event, 0),
     );
     let results = [a.unwrap(), b.unwrap()];
     assert!(results.contains(&AdmissionResult::Admitted));
@@ -152,7 +152,7 @@ async fn concurrent_duplicate_admission_and_cascade_cleanup(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(
-        repo.admit(id, ConfigurationRevision::INITIAL, &event)
+        repo.admit(id, ConfigurationRevision::INITIAL, &event, 0)
             .await
             .unwrap(),
         AdmissionResult::AlreadyPresent
@@ -176,7 +176,7 @@ async fn concurrent_duplicate_admission_and_cascade_cleanup(pool: PgPool) {
         Some(0)
     );
     assert_eq!(
-        repo.admit(id, ConfigurationRevision::INITIAL, &event)
+        repo.admit(id, ConfigurationRevision::INITIAL, &event, 0)
             .await
             .unwrap(),
         AdmissionResult::Ineligible
@@ -242,7 +242,7 @@ async fn candidates_exact_recheck_activation_and_keyset_pages(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(
-        repo.admit(null_ids, ConfigurationRevision::INITIAL, &event)
+        repo.admit(null_ids, ConfigurationRevision::INITIAL, &event, 0)
             .await
             .unwrap(),
         AdmissionResult::Ineligible
@@ -330,7 +330,7 @@ async fn admission_skips_invalid_first_and_middle_pages_without_truncating_fanou
     };
     let repo = Arc::new(PgEventRunRepo::new(pool.clone()));
     let first = repo
-        .candidate_actions(&incoming.normalize().unwrap(), None, page(2))
+        .candidate_actions(&incoming.normalize().unwrap().reference, None, page(2))
         .await
         .unwrap();
     assert!(first.configurations.is_empty());
@@ -511,7 +511,7 @@ async fn expired_started_is_interrupted_and_never_requeued(pool: PgPool) {
         .unwrap();
     assert_eq!(token, Some(newer.token.as_uuid()));
     assert_eq!(
-        repo.admit(id, ConfigurationRevision::INITIAL, &first)
+        repo.admit(id, ConfigurationRevision::INITIAL, &first, 0)
             .await
             .unwrap(),
         AdmissionResult::AlreadyPresent
@@ -593,7 +593,7 @@ async fn revision_disable_and_cancellation_rechecks(pool: PgPool) {
     sqlx::query!("UPDATE scheduled_action SET configuration_revision = configuration_revision + 1 WHERE id = $1", id).execute(&pool).await.unwrap();
     assert!(claim(&repo, pending.clone()).await.is_none());
     assert_eq!(
-        repo.admit(id, ConfigurationRevision::INITIAL, &event)
+        repo.admit(id, ConfigurationRevision::INITIAL, &event, 0)
             .await
             .unwrap(),
         AdmissionResult::Ineligible
@@ -608,7 +608,8 @@ async fn revision_disable_and_cancellation_rechecks(pool: PgPool) {
         repo.admit(
             id,
             ConfigurationRevision::INITIAL.next().unwrap(),
-            &next_event
+            &next_event,
+            0
         )
         .await
         .unwrap(),
@@ -760,7 +761,7 @@ async fn admission_waits_for_configuration_lock_and_rechecks_disable(pool: PgPoo
     let admitting_repo = repo.clone();
     let mut admitting = tokio::spawn(async move {
         admitting_repo
-            .admit(id, ConfigurationRevision::INITIAL, &event)
+            .admit(id, ConfigurationRevision::INITIAL, &event, 0)
             .await
     });
     assert!(
@@ -942,13 +943,13 @@ async fn property_changes_match_general_selectors_without_duplicate_runs(pool: P
     assert_eq!(ids, expected);
     for action_id in expected {
         assert_eq!(
-            repo.admit(action_id, ConfigurationRevision::INITIAL, &event)
+            repo.admit(action_id, ConfigurationRevision::INITIAL, &event, 0)
                 .await
                 .unwrap(),
             AdmissionResult::Admitted
         );
         assert_eq!(
-            repo.admit(action_id, ConfigurationRevision::INITIAL, &event)
+            repo.admit(action_id, ConfigurationRevision::INITIAL, &event, 0)
                 .await
                 .unwrap(),
             AdmissionResult::AlreadyPresent
@@ -956,7 +957,7 @@ async fn property_changes_match_general_selectors_without_duplicate_runs(pool: P
     }
     for action_id in [other_task, priority] {
         assert_eq!(
-            repo.admit(action_id, ConfigurationRevision::INITIAL, &event)
+            repo.admit(action_id, ConfigurationRevision::INITIAL, &event, 0)
                 .await
                 .unwrap(),
             AdmissionResult::Ineligible
@@ -1073,4 +1074,38 @@ async fn conditions_do_not_change_candidate_matching(pool: PgPool) {
     );
     assert!(page.configurations[0].filters.has_conditions());
     admit(&repo, id, &event).await;
+}
+
+#[sqlx::test(migrator = "MACRO_DB_MIGRATIONS")]
+async fn admitted_hops_reach_pending_runs_and_count_toward_the_bot_rate(pool: PgPool) {
+    let (repo, id, person) = setup(&pool).await;
+    let since = Utc::now() - chrono::Duration::minutes(1);
+    let first_bot = new_event(generate_uuid_v7());
+    let second_bot = new_event(generate_uuid_v7());
+    for (event, hop) in [(&person, 0), (&first_bot, 2), (&second_bot, 1)] {
+        assert_eq!(
+            repo.admit(id, ConfigurationRevision::INITIAL, event, hop)
+                .await
+                .unwrap(),
+            AdmissionResult::Admitted
+        );
+    }
+    assert_eq!(repo.bot_runs_since(id, since).await.unwrap(), 2);
+    assert_eq!(
+        repo.bot_runs_since(id, Utc::now() + chrono::Duration::minutes(1))
+            .await
+            .unwrap(),
+        0
+    );
+    let hops = sqlx::query_scalar!(
+        "SELECT hop FROM scheduled_action_event_run WHERE action_id = $1 ORDER BY admission_order",
+        id,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(hops, vec![0, 2, 1]);
+    let pending = repo.pending_runs(page(1)).await.unwrap();
+    assert_eq!(pending[0].event, person);
+    assert_eq!(pending[0].hop, 0);
 }

@@ -195,6 +195,26 @@ fn a_bot_authored_mention_is_skipped() {
 }
 
 #[test]
+fn a_bot_mention_for_a_user_opens_a_session_for_that_user() {
+    let event = AgentTriggerTopicEvent::New(NewAgentSessionEvent::TopLevelMentioned(
+        AgentBotMentionedEvent {
+            bot_id: BotId::TEST_A,
+            message: ChannelMessagePostedMetadata {
+                triggered_by: Some(user().as_ref().to_owned()),
+                ..message(ChannelSender::new_from_bot(BotId::TEST_B))
+            },
+            context: None,
+        },
+    ));
+    let Ok(RoutedTrigger::Command(_, HarnessCommand::Open(open))) =
+        route_agent_trigger(event, runtime(AgentKind::InMemory), &links())
+    else {
+        panic!("a bot acting for a user should open a session");
+    };
+    assert_eq!(mention_origin(&open).sender, user());
+}
+
+#[test]
 fn any_user_mention_can_open_a_managed_agent() {
     let user = MacroUserIdStr::try_from_email("asker@example.com").expect("a valid user id");
 

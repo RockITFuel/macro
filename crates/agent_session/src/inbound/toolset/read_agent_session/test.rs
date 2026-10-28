@@ -8,6 +8,10 @@ async fn failed_access_check_never_reads_session_metadata_or_history() {
     let repo = InMemoryAgentSessionRepo::new();
     let context = ServiceContext(ReadAgentSessionContext {
         service: Arc::new(SessionReader::new(repo.clone())),
+        waiter: Arc::new(crate::domain::wait::SessionWaiter::new(
+            repo.clone(),
+            crate::domain::wait::TurnSignals::default(),
+        )),
         sharing: Arc::new(crate::domain::sharing::SessionSharingService::new(
             repo.clone(),
         )),

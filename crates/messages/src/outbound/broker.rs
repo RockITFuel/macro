@@ -178,6 +178,7 @@ pub fn topic_events(event: &crate::domain::ports::MessageEvent) -> Vec<MessageMa
                     thread_id: message.thread_id,
                     root_id: message.root_id(),
                     sender: message.sender_id.clone(),
+                    triggered_by: message.triggered_by.clone(),
                     content: message.content.clone(),
                     mentioned: mention.clone(),
                     created_at: message.created_at,

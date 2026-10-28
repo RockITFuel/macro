@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT COALESCE(MAX(hop), 0)::SMALLINT AS \"hop!\",\n                       COALESCE(array_agg(DISTINCT routine_id) FILTER (WHERE routine_id IS NOT NULL), '{}') AS \"routines!\"\n                FROM agent_work_chain\n                WHERE user_id = $1 AND bot_id = $2 AND ends_at >= $3 AND started_at <= $4\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hop!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 1,
+        "name": "routines!",
+        "type_info": "UuidArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "bfff97428463f546ff62999a1516cffa0b53fea7265fca2bb6b6e5e1a77068ef"
+}

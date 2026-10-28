@@ -357,6 +357,7 @@ fn event_run() -> ClaimedEventRun {
         revision: action.configuration_revision,
         event,
         admitted_at: Utc::now(),
+        hop: 0,
     };
     ClaimedEventRun {
         run: AuthorizedEventRun {

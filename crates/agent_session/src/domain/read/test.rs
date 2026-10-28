@@ -1,5 +1,6 @@
 use super::*;
 use crate::testing::{InMemoryAgentSessionRepo, test_agent_session};
+use agent_fold::domain::fold::fold;
 use agent_fold::testing::{TURN, parse_log_as};
 use entity_access::domain::models::{AccessLevel, Entity, EntityPermission};
 use macro_user_id::user_id::MacroUserIdStr;

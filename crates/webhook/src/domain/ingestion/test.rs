@@ -780,6 +780,7 @@ fn message_event_cases() -> Vec<EventCase> {
                     thread_id: None,
                     root_id: message_id,
                     sender: sender(member),
+                    triggered_by: None,
                     content: "hello bot".to_string(),
                     mentioned: SimpleMention {
                         entity_type: "bot".to_string(),

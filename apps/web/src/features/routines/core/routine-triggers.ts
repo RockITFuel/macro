@@ -42,12 +42,30 @@ export const routineTriggerSchema = z.discriminatedUnion('kind', [
     ids: z.array(z.string().uuid()).optional(),
     /** Yes/no question the event's content must answer with yes. */
     condition: z.string().optional(),
+    /** Also run for changes agents and bots make, within these limits. */
+    botActivity: z
+      .object({
+        max_hops: z.number().int(),
+        max_runs_per_hour: z.number().int(),
+      })
+      .optional(),
   }),
 ]);
 export type ScheduleTriggerDraft = z.infer<typeof scheduleTriggerSchema>;
 export type RoutineTriggerDraft = z.infer<typeof routineTriggerSchema>;
 export type EventTriggerDraft = Extract<RoutineTriggerDraft, { kind: 'event' }>;
 export type RoutineEventName = EventTriggerDraft['events'][number];
+/** The server's defaults: three bot hand-offs, ten bot-caused runs an hour. */
+export const DEFAULT_BOT_ACTIVITY = { max_hops: 3, max_runs_per_hour: 10 };
+const PEOPLE_ONLY_EVENTS: RoutineEventName[] = [
+  'email.message_received',
+  'call.started',
+  'call.ended',
+];
+/** Whether agents and bots can cause any of the trigger's events. */
+export function acceptsBotActivity(trigger: EventTriggerDraft) {
+  return trigger.events.some((name) => !PEOPLE_ONLY_EVENTS.includes(name));
+}
 export const routineEventGroups = [
   'Channels',
   'Documents',

@@ -128,6 +128,23 @@ export type AiAdmissionErrorBody = {
 };
 
 /**
+ * Lets a filter match changes made by agents and bots, within limits that
+ * stop bots from triggering each other forever. A routine never runs for
+ * activity its own runs caused.
+ */
+export type BotActivity = {
+    /**
+     * Bot hand-offs allowed since the last human action, 1 to 5 (default 3).
+     * A run started by a bot that a person started is hop 1.
+     */
+    max_hops: number;
+    /**
+     * Runs bot activity may start per hour, 1 to 60 (default 10).
+     */
+    max_runs_per_hour: number;
+};
+
+/**
  * Why an event-triggered run was skipped before it started.
  */
 export type ConditionResult = {
@@ -157,6 +174,7 @@ export type EmptyResponse = {
  * condition further requires the event's content to answer it with yes.
  */
 export type EventFilter = {
+    bot_activity?: null | BotActivity;
     /**
      * Yes/no question about the triggering content, e.g. "Is this email an
      * invoice?". The routine runs only when the answer is yes.
