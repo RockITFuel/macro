@@ -12,6 +12,10 @@ services:
     mem_limit: 8g
     environment:
       MACRO_LOCAL_STT_REDIS_URL: redis://:${LOCAL_STT_REDIS_PASSWORD:?set in .env}@100.81.201.84:6385/0
+      # Fail a Redis read after 15 s and reconnect (defaults, explicit here:
+      # this worker is ~200 ms from Warsaw and its connections can go stale).
+      MACRO_LOCAL_STT_SOCKET_TIMEOUT: "15"
+      MACRO_LOCAL_STT_CONNECT_TIMEOUT: "5"
       LOCAL_STT_WORKER_ID: luka-mini
       LOCAL_STT_MACHINE: luka-mini
       LOCAL_STT_THREADS: "4"

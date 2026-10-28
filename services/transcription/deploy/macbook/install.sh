@@ -15,7 +15,7 @@ cp "$src"/requirements-local-stt*.txt "$home/"
 uv venv --allow-existing --python 3.12 "$home/venv"
 VIRTUAL_ENV="$home/venv" uv pip install -q -r "$home/requirements-local-stt-mlx.txt"
 umask 077
-printf 'MACRO_LOCAL_STT_REDIS_URL=redis://:%s@100.81.201.84:6385/0\n' "$LOCAL_STT_REDIS_PASSWORD" > "$home/env"
+printf "MACRO_LOCAL_STT_REDIS_URL='redis://:%s@100.81.201.84:6385/0'\n" "$LOCAL_STT_REDIS_PASSWORD" > "$home/env"
 sed -e "s#@HOME@#$home#g" "$here/$label.plist" > "$HOME/Library/LaunchAgents/$label.plist"
 launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$label.plist"

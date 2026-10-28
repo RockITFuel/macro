@@ -14,6 +14,8 @@ from .queue import SttQueue
 
 ENV_REDIS_URL = "MACRO_LOCAL_STT_REDIS_URL"
 ENV_PREFIX = "MACRO_LOCAL_STT_PREFIX"
+ENV_SOCKET_TIMEOUT = "MACRO_LOCAL_STT_SOCKET_TIMEOUT"
+ENV_CONNECT_TIMEOUT = "MACRO_LOCAL_STT_CONNECT_TIMEOUT"
 
 
 def redis_url_from_env() -> str | None:
@@ -28,7 +30,16 @@ def queue_from_env(url: str | None = None) -> SttQueue:
     if not url:
         raise RuntimeError(f"{ENV_REDIS_URL} is not set")
     return SttQueue(
-        Redis.from_url(url, socket_keepalive=True, health_check_interval=30),
+        Redis.from_url(
+            url,
+            socket_keepalive=True,
+            health_check_interval=30,
+            # Blocking reads wait at most ~1 s, so a read that hangs longer
+            # is a dead connection (a Mac back from sleep, a Tailscale
+            # re-route): fail it and reconnect instead of hanging.
+            socket_timeout=float(os.environ.get(ENV_SOCKET_TIMEOUT, "15")),
+            socket_connect_timeout=float(os.environ.get(ENV_CONNECT_TIMEOUT, "5")),
+        ),
         prefix=os.environ.get(ENV_PREFIX, "stt"),
     )
 

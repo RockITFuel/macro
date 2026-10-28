@@ -12,13 +12,17 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import numpy as np
+from redis.exceptions import RedisError
 
 from .audio import SAMPLE_RATE, decode, pcm16_to_float
 from .engines import Engine
 from .models import Job, JobKind, Result, WorkerInfo
-from .queue import SttQueue
+from .queue import Assignment, SttQueue
 
 logger = logging.getLogger("local_stt.worker")
+
+# Upper bound for one Redis call, above the client's socket timeout (15 s).
+REDIS_CALL_DEADLINE_S = 30.0
 
 
 @dataclass
@@ -36,6 +40,10 @@ class WorkerConfig:
     # Run every transcription on one dedicated thread (MLX ties its streams
     # to the thread that created them).
     serialize_engine: bool = False
+    # Real-time factor the router assumes until this worker has measured its
+    # own; the engine's default was measured on luka-mini, so slower machines
+    # (Warsaw) set theirs or win jobs they are too slow for after a restart.
+    initial_rtf: float | None = None
 
 
 def machine_load() -> tuple[float, int]:
@@ -55,7 +63,8 @@ class Worker:
         self.queue = queue
         self.engine = engine
         self.cfg = cfg
-        self.rtf = engine.default_rtf
+        self.rtf = cfg.initial_rtf or engine.default_rtf
+        self.rtt_s: float | None = None
         self.running = 0
         self.started_at = time.time()
         self._stop = asyncio.Event()
@@ -72,6 +81,7 @@ class Worker:
             models=[self.engine.family],
             hardware=self.engine.hardware,
             rtf=round(self.rtf, 4),
+            rtt_s=round(self.rtt_s or 0.0, 4),
             max_concurrency=self.cfg.max_concurrency,
             priorities=self.cfg.priorities,
             tier=self.cfg.tier,
@@ -126,52 +136,77 @@ class Worker:
     async def _heartbeat_loop(self) -> None:
         while True:
             try:
-                await self.queue.heartbeat(self.info())
+                started = time.perf_counter()
+                async with asyncio.timeout(REDIS_CALL_DEADLINE_S):
+                    await self.queue.heartbeat(self.info())
+                self._observe_rtt(time.perf_counter() - started)
             except Exception:
                 logger.exception("heartbeat failed")
             await asyncio.sleep(self.cfg.heartbeat_s)
 
+    def _observe_rtt(self, sample_s: float) -> None:
+        """Moving average of the round trip to Redis, timed on the heartbeat
+        write. The router adds it to every estimate: a worker 200 ms away pays
+        that on each job. Outliers (a stall, a wake from sleep) count less."""
+        if self.rtt_s is None:
+            self.rtt_s = sample_s
+        else:
+            self.rtt_s = 0.8 * self.rtt_s + 0.2 * min(sample_s, 4 * self.rtt_s + 0.05)
+
     async def _slot(self) -> None:
         while not self._stop.is_set():
             try:
-                job_id = await self.queue.take(self.cfg.id, 1.0)
+                # Watchdog over the socket timeout: a slot must never wait
+                # forever on Redis (seen once after a container was paused).
+                async with asyncio.timeout(REDIS_CALL_DEADLINE_S):
+                    assignment = await self.queue.take(self.cfg.id, 1.0)
             except Exception:
                 logger.exception("taking a job failed")
                 await asyncio.sleep(1.0)
                 continue
-            if job_id:
-                await self.process(job_id)
+            if assignment is not None:
+                try:
+                    await self.process(assignment)
+                except Exception:
+                    # The dispatcher requeues the job at its deadline.
+                    logger.exception("job %s could not be settled", assignment.job.id)
             else:
                 # BLMOVE already waited; this only matters for Redis fakes
                 # that return at once, which would otherwise spin.
                 await asyncio.sleep(0.05)
 
-    async def process(self, job_id: str) -> Result | None:
+    async def process(self, assignment: Assignment) -> Result | None:
+        """Run one job. Round trips to Redis: the BLMOVE that delivered the
+        assignment (job and audio included) and the script that stores the
+        result and releases it."""
+        job = assignment.job
         self.running += 1
         try:
-            if await self.queue.get_result(job_id) is not None:
-                return None  # finished elsewhere after a requeue
-            job = await self.queue.get_job(job_id)
-            if job is None:
-                return None
             try:
-                result = await self._run(job)
+                result = await self._run(job, assignment.audio)
             except Exception as exc:
-                logger.exception("job %s failed on %s", job_id, self.cfg.id)
+                logger.exception("job %s failed on %s", job.id, self.cfg.id)
                 # Another worker may succeed (download hiccup, OOM); the queue
                 # fails the job once its attempts are used up.
                 await self.queue.requeue(
                     job, self.cfg.id, f"{type(exc).__name__}: {exc}"
                 )
                 return None
-            await self.queue.submit_result(result)
+            for attempt in (1, 2):
+                try:
+                    async with asyncio.timeout(REDIS_CALL_DEADLINE_S):
+                        await self.queue.submit_result(result, worker_id=self.cfg.id)
+                    break
+                except (TimeoutError, OSError, RedisError):
+                    if attempt == 2:
+                        raise
+                    logger.warning("storing result of %s failed, retrying", job.id)
             return result
         finally:
-            await self.queue.release(self.cfg.id, job_id)
             self.running -= 1
 
-    async def _run(self, job: Job) -> Result:
-        samples = await self._load_audio(job)
+    async def _run(self, job: Job, audio: bytes | None) -> Result:
+        samples = await self._load_audio(job, audio)
         duration = samples.size / SAMPLE_RATE
         started = time.perf_counter()
         segments = await self._in_engine_thread(samples, job.language)
@@ -195,12 +230,11 @@ class Worker:
             processing_s=round(elapsed, 3),
         )
 
-    async def _load_audio(self, job: Job) -> np.ndarray:
+    async def _load_audio(self, job: Job, audio: bytes | None) -> np.ndarray:
         if job.kind is JobKind.CHUNK:
-            pcm = await self.queue.get_audio(job.id)
-            if pcm is None:
+            if audio is None:
                 raise RuntimeError("chunk audio expired")
-            return pcm16_to_float(pcm)
+            return pcm16_to_float(audio)
         if not job.source_url:
             raise RuntimeError("recording job without source_url")
         return await self._download_and_decode(job.source_url)

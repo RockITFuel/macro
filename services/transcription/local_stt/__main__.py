@@ -64,6 +64,7 @@ async def _worker(args) -> None:
         max_cpu_load=args.max_cpu_load,
         min_free_mem_mb=args.min_free_mem_mb,
         download_dir=args.download_dir or None,
+        initial_rtf=args.initial_rtf or None,
         serialize_engine=engine.hardware == "mlx",
     )
     worker = Worker(queue_from_env(args.redis_url), engine, cfg)
@@ -95,6 +96,24 @@ async def _recording(args) -> None:
     if args.wait:
         result = await queue.wait_result(job_id, args.wait)
         print(json.dumps(asdict(result) if result else {"pending": job_id}, indent=2))
+
+
+def _install_task_dump() -> None:
+    """`kill -USR2 <pid>` logs every asyncio task's stack: where a stuck
+    worker or hub is waiting (py-spy only shows threads)."""
+    import faulthandler
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
+
+    def dump(*_):
+        loop = asyncio._get_running_loop()
+        if loop is None:
+            return
+        for task in asyncio.all_tasks(loop):
+            print(f"--- task {task.get_name()}", file=sys.stderr)
+            task.print_stack(file=sys.stderr)
+
+    signal.signal(signal.SIGUSR2, dump)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -143,6 +162,12 @@ def main(argv: list[str] | None = None) -> None:
         default=int(_env("LOCAL_STT_MIN_FREE_MEM_MB", "2048")),
     )
     worker.add_argument("--download-dir", default=_env("LOCAL_STT_DOWNLOAD_DIR", ""))
+    worker.add_argument(
+        "--initial-rtf",
+        type=float,
+        default=float(_env("LOCAL_STT_INITIAL_RTF", "0")),
+        help="speed estimate until measured (default: the engine's)",
+    )
 
     sub.add_parser("status")
 
@@ -161,6 +186,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     args = parser.parse_args(argv)
+    _install_task_dump()
     logging.basicConfig(
         level=_env("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
