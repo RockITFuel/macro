@@ -7,7 +7,9 @@ use macro_user_id::user_id::MacroUserIdStr;
 use model_entity::{Entity, EntityType};
 
 use super::*;
-use crate::domain::ports::{SoupRealtimeConsumer, SoupRealtimePublisher, UserAccessExpander};
+use crate::domain::ports::{
+    SoupRealtimeConsumer, SoupRealtimeLiveNotifier, SoupRealtimePublisher, UserAccessExpander,
+};
 
 const DOCUMENT_ID: &str = "00000000-0000-0000-0000-000000000001";
 const OTHER_DOCUMENT_ID: &str = "00000000-0000-0000-0000-000000000002";
@@ -70,6 +72,32 @@ impl SoupRealtimePublisher for FakePublisher {
     }
 }
 
+type Notified = (Vec<MacroUserIdStr<'static>>, Patch<Entity<'static>>);
+
+#[derive(Clone, Default)]
+struct FakeLiveNotifier {
+    notified: Arc<Mutex<Vec<Notified>>>,
+    fail: bool,
+}
+
+impl SoupRealtimeLiveNotifier for FakeLiveNotifier {
+    async fn notify(
+        &self,
+        recipients: &[MacroUserIdStr<'static>],
+        patch: &Patch<Entity<'static>>,
+    ) -> Result<(), Report> {
+        self.notified
+            .lock()
+            .expect("notified lock")
+            .push((recipients.to_vec(), patch.clone()));
+        if self.fail {
+            Err(rootcause::report!("gateway unavailable"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 struct GatedPublisher {
     messages: Arc<Mutex<Vec<SoupRealtimeMessage>>>,
     permits: Arc<tokio::sync::Semaphore>,
@@ -107,6 +135,7 @@ fn gated_service() -> GatedHarness {
             messages: messages.clone(),
             permits: permits.clone(),
         },
+        FakeLiveNotifier::default(),
     );
     GatedHarness {
         service: Arc::new(service),
@@ -202,6 +231,7 @@ struct Harness {
     access_calls: Arc<AtomicUsize>,
     access_entities: Arc<Mutex<Vec<Entity<'static>>>>,
     messages: Arc<Mutex<Vec<SoupRealtimeMessage>>>,
+    live_notifier: FakeLiveNotifier,
 }
 
 async fn wait_until(mut condition: impl FnMut() -> bool) {
@@ -231,6 +261,15 @@ fn harness(
     access_fails: bool,
     fail_users: HashSet<String>,
 ) -> Harness {
+    harness_with_notifier(users, access_fails, fail_users, FakeLiveNotifier::default())
+}
+
+fn harness_with_notifier(
+    users: Vec<MacroUserIdStr<'static>>,
+    access_fails: bool,
+    fail_users: HashSet<String>,
+    live_notifier: FakeLiveNotifier,
+) -> Harness {
     let access_calls = Arc::new(AtomicUsize::new(0));
     let access_entities = Arc::new(Mutex::new(Vec::new()));
     let messages = Arc::new(Mutex::new(Vec::new()));
@@ -245,12 +284,14 @@ fn harness(
             messages: messages.clone(),
             fail_users,
         },
+        live_notifier.clone(),
     );
     Harness {
         service,
         access_calls,
         access_entities,
         messages,
+        live_notifier,
     }
 }
 
@@ -424,4 +465,96 @@ async fn publisher_failure_is_returned_after_attempting_all_recipients() {
             .contains("1 realtime Soup publication(s) failed")
     );
     assert_eq!(harness.messages.lock().expect("messages lock").len(), 3);
+}
+
+#[tokio::test]
+async fn live_clients_are_notified_once_per_patch_with_the_deduplicated_accessors() {
+    let one = user("one");
+    let two = user("two");
+    let harness = harness(
+        vec![one.clone(), two.clone(), one.clone()],
+        false,
+        HashSet::new(),
+    );
+
+    harness
+        .service
+        .notify_users(SoupRealtimePatch::for_entity(updated_document()))
+        .await
+        .expect("patch is published");
+
+    assert_eq!(
+        harness
+            .live_notifier
+            .notified
+            .lock()
+            .expect("notified lock")
+            .as_slice(),
+        &[(vec![one, two], updated_document())]
+    );
+}
+
+#[tokio::test]
+async fn users_without_access_are_never_notified() {
+    let harness = harness(Vec::new(), false, HashSet::new());
+
+    harness
+        .service
+        .notify_users(SoupRealtimePatch::for_entity(updated_document()))
+        .await
+        .expect("patch is processed");
+
+    assert!(
+        harness
+            .live_notifier
+            .notified
+            .lock()
+            .expect("notified lock")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn access_failure_notifies_no_live_client() {
+    let harness = harness(vec![user("one")], true, HashSet::new());
+
+    harness
+        .service
+        .notify_users(SoupRealtimePatch::for_entity(updated_document()))
+        .await
+        .expect_err("access failure reaches the caller");
+
+    assert!(
+        harness
+            .live_notifier
+            .notified
+            .lock()
+            .expect("notified lock")
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn live_notifier_failure_still_publishes_the_patch() {
+    let recipient = user("one");
+    let harness = harness_with_notifier(
+        vec![recipient.clone()],
+        false,
+        HashSet::new(),
+        FakeLiveNotifier {
+            fail: true,
+            ..FakeLiveNotifier::default()
+        },
+    );
+
+    harness
+        .service
+        .notify_users(SoupRealtimePatch::for_entity(updated_document()))
+        .await
+        .expect("a live notification failure does not fail the patch");
+
+    assert_eq!(
+        harness.messages.lock().expect("messages lock").as_slice(),
+        &[SoupRealtimeMessage::new(recipient, updated_document())]
+    );
 }
