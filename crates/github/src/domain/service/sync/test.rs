@@ -6050,3 +6050,15 @@ async fn realtime_delivery_failure_keeps_the_saved_mapping() {
     assert_eq!(upserts.len(), 1);
     assert_eq!(service.foreign_entity_service.foreign_entities().len(), 1);
 }
+
+#[test]
+fn task_comment_links_open_the_task_on_the_configured_app_origin() {
+    assert_eq!(
+        super::create_macro_task_comment_link("https://macro.com", "Fix login", "doc-1"),
+        "[Fix login](https://macro.com/app/task/doc-1)"
+    );
+    assert_eq!(
+        super::create_macro_task_comment_link("https://macro.example.com/", "Fix login", "doc-1"),
+        "[Fix login](https://macro.example.com/app/task/doc-1)"
+    );
+}

@@ -16,7 +16,7 @@ mod colleague_joined;
 pub use colleague_joined::ColleagueJoinedMacro;
 
 use askama::Template;
-use macro_env::Environment;
+use macro_service_urls::AppServiceUrl;
 use macro_user_id::cowlike::CowLike;
 use macro_user_id::email::EmailStr;
 use macro_user_id::email::ReadEmailParts;
@@ -59,8 +59,7 @@ pub struct InviteToMacro {
 
 impl InviteToMacro {
     fn referral_url(&self) -> Url {
-        let env = Environment::new_or_prod();
-        get_url(env, &self.referral_code)
+        get_url(frontend_host(), &self.referral_code)
     }
 }
 
@@ -70,28 +69,22 @@ impl Notification for InviteToMacro {
 
 const MINUTES_PER_WEEK: u64 = 60 * 24 * 7;
 
-fn frontend_host(env: Environment) -> Url {
-    let host = match env {
-        Environment::Production => "https://macro.com".to_string(),
-        Environment::Develop => "https://dev.macro.com".to_string(),
-        Environment::Local => {
-            #[expect(clippy::disallowed_methods, reason = "Only used when running locally")]
-            let port = std::env::var("FRONTEND_PORT").unwrap_or_else(|_| "3000".to_string());
-            format!("http://localhost:{port}")
-        }
-    };
-
-    Url::parse(&host).expect("all the inputs are static, valid values")
+/// The web app's origin. A self-hosted stack sets `OVERRIDE_APP_SERVICE_URL`
+/// to its public `FRONTEND_ORIGIN`, so its emails link there, not to localhost.
+fn frontend_host() -> Url {
+    AppServiceUrl::unwrap_new()
+        .parse_url()
+        .expect("the app service URL must be a valid URL")
 }
 
-fn signup_url(env: Environment) -> Url {
-    let mut url = frontend_host(env);
+fn signup_url(origin: Url) -> Url {
+    let mut url = origin;
     url.set_path("/app/signup");
     url
 }
 
-fn get_url(env: Environment, code: &ReferralCode) -> Url {
-    let mut url = signup_url(env);
+fn get_url(origin: Url, code: &ReferralCode) -> Url {
+    let mut url = signup_url(origin);
     url.query_pairs_mut()
         .clear()
         .append_pair("referral_code", &code.0)
@@ -163,7 +156,7 @@ pub struct ChannelInviteMetadata {
 
 impl ChannelInviteMetadata {
     fn signup_url(&self) -> Url {
-        signup_url(Environment::new_or_prod())
+        signup_url(frontend_host())
     }
 
     fn sender_display(&self) -> &str {
@@ -332,9 +325,12 @@ const MAX_BUTTON_TEAM_NAME_CHARS: usize = 24;
 impl InviteToTeamMetadata {
     /// Returns the team invite URL for the current environment.
     pub fn invite_url(&self) -> Url {
-        let env = Environment::new_or_prod();
+        self.invite_url_on(frontend_host())
+    }
 
-        let mut url = frontend_host(env);
+    /// The team invite URL on the web app at `origin`.
+    fn invite_url_on(&self, origin: Url) -> Url {
+        let mut url = origin;
         url.set_path("/app/team-invite");
         url.query_pairs_mut()
             .append_pair("id", &self.team_invite_id.to_string());

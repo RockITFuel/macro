@@ -48,7 +48,7 @@ impl ColleagueJoinedMacro {
     }
 
     fn signup_url(&self) -> Url {
-        signup_url(Environment::new_or_prod())
+        signup_url(frontend_host())
     }
 }
 
