@@ -14,6 +14,7 @@
 //! - `POST /create_snippet` — create and initialize a snippet document
 //! - `POST /create_skill` — create and initialize a skill document
 //! - `GET /system_skills` — list the built-in system skills
+//! - `GET`/`PUT /{document_id}/markdown` — read or exactly replace a markdown document's content
 //! - `DELETE /{document_id}` — soft-delete a document
 
 #[cfg(test)]
@@ -31,6 +32,7 @@ pub mod create_skill;
 pub mod create_snippet;
 pub mod create_task;
 pub mod delete_document;
+pub mod document_markdown;
 pub mod edit_document;
 pub mod get_branch_name;
 pub mod get_cached_snapshot_url;
@@ -67,6 +69,7 @@ use serde::Deserialize;
 // Existing router composition state; the text handler uses domain services, never SQL.
 // ast-grep-ignore: rust-no-sqlx-in-inbound
 use sqlx::PgPool;
+use sync_service_client::SyncServiceClient;
 use task_dedup::PgTaskDedupService;
 
 #[cfg(feature = "document_create")]
@@ -81,6 +84,7 @@ use self::{
     create_document::create_document_handler,
     create_task::create_task_handler,
     delete_document::delete_document_handler,
+    document_markdown::{get_document_markdown_handler, set_document_markdown_handler},
     edit_document::edit_document_handler,
     get_branch_name::get_branch_name_handler,
     get_cached_snapshot_url::get_cached_snapshot_url_handler,
@@ -182,6 +186,8 @@ pub struct DocumentRouterState<T, Svc, Auth> {
     /// Lexical service client, used to fetch embedding-format markdown for
     /// task duplicate detection.
     pub lexical_client: Arc<LexicalClient>,
+    /// Sync-service client, for exact markdown reads and writes.
+    pub sync_service_client: Arc<SyncServiceClient>,
     /// Backend-owned document creation use case.
     #[cfg(feature = "document_create_adapters")]
     pub creator: DefaultDocumentCreator<T>,
@@ -201,6 +207,7 @@ impl<T, Svc, Auth> Clone for DocumentRouterState<T, Svc, Auth> {
             pool: self.pool.clone(),
             task_dedup_service: self.task_dedup_service.clone(),
             lexical_client: self.lexical_client.clone(),
+            sync_service_client: self.sync_service_client.clone(),
             #[cfg(feature = "document_create_adapters")]
             creator: self.creator.clone(),
             document_permission_jwt_secret: self.document_permission_jwt_secret.clone(),
@@ -252,6 +259,11 @@ where
         .route(
             "/{document_id}/text-content",
             axum::routing::get(get_text::get_text_handler::<T, Svc, Auth>),
+        )
+        .route(
+            "/{document_id}/markdown",
+            axum::routing::get(get_document_markdown_handler::<T, Svc, Auth>)
+                .put(set_document_markdown_handler::<T, Svc, Auth>),
         )
         .route(
             "/{document_id}/location_v3",

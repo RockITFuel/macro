@@ -1,12 +1,13 @@
 import type { Transformer } from '@lexical/markdown';
 import { I_AGENT_ACTIVITY } from './agentActivity';
 import { I_AGENT_CONTEXT } from './agentContext';
-import { AUTO_LINK, ESCAPED_AUTO_LINK } from './auto-link';
+import { AUTO_LINK, E_BARE_URL_LINK, ESCAPED_AUTO_LINK } from './auto-link';
 import { I_AWAIT_NODE } from './await';
 import { HTML_BLOCKQUOTE, I_MACRO_QUOTE } from './classedBlock';
 import { I_CURSOR_SYSTEM_NOTIFICATION } from './cursorSystemNotification';
 import { CUSTOM_TRANSFORMERS } from './customTransformers';
 import { I_DATABASE_QUERY, I_DATABASE_QUERY_BLOCK } from './databaseQuery';
+import { FRONT_MATTER } from './frontMatter';
 import { I_HTML_RENDER } from './htmlRender';
 import { I_IMAGE_CONSTRAINED, IMAGE } from './image';
 import {
@@ -60,6 +61,7 @@ import { UNKNOWN_MENTION } from './unknownMention';
 import { I_VIDEO, VIDEO_LINK } from './video';
 import { E_WATERMARK, I_WATERMARK } from './watermark';
 
+export { FRONT_MATTER, frontMatterState } from './frontMatter';
 export { isConversionOnlyTransformer };
 
 /**
@@ -68,6 +70,7 @@ export { isConversionOnlyTransformer };
  * standard markdown syntax.
  */
 export const INTERNAL_TRANSFORMERS: Transformer[] = [
+  FRONT_MATTER, // Before HR: a leading `---` may open front matter
   I_DATABASE_QUERY_BLOCK,
   I_DATABASE_QUERY,
   I_SNAPSHOT_NODE, // Must be before mentions to avoid matching inner tags in snapshot content
@@ -116,6 +119,7 @@ export const INTERNAL_TRANSFORMERS: Transformer[] = [
  * External transformers for converting Lexical to and from to GitHub Flavored (ish) Markdown.
  */
 export const EXTERNAL_TRANSFORMERS: Transformer[] = [
+  FRONT_MATTER, // Before HR: a leading `---` may open front matter
   UNLINKED_TEXT,
   I_DATABASE_QUERY_BLOCK,
   I_DATABASE_QUERY,
@@ -151,6 +155,7 @@ export const EXTERNAL_TRANSFORMERS: Transformer[] = [
   E_INLINE_EQUATION_NODE,
   E_WATERMARK,
   E_SNAPSHOT_NODE,
+  E_BARE_URL_LINK, // Before LINK, so a bare URL stays bare
   ...HTML_ENTITY_TRANSFORMERS,
   ...CUSTOM_TRANSFORMERS,
   ESCAPED_AUTO_LINK,
@@ -162,6 +167,7 @@ export const EXTERNAL_TRANSFORMERS: Transformer[] = [
  * Complete set of transformers supporting both internal and external markdown operations.
  */
 export const ALL_TRANSFORMERS: Transformer[] = [
+  FRONT_MATTER, // Before HR: a leading `---` may open front matter
   I_DATABASE_QUERY_BLOCK,
   I_DATABASE_QUERY,
   I_SNAPSHOT_NODE, // Must be before mentions to avoid matching inner tags in snapshot content

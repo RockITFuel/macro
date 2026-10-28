@@ -14,6 +14,8 @@ comment/markdown rendering. Production runs on ECS behind the gateway at
   middleware.
 - `src/endpoints/`: one file per route (`plaintext.ts`, `search-text.ts`,
   `cognition-text.ts`/`cognition-v2.ts`, `markdown.ts`, `markdown-snapshot.ts`,
+  `markdown-update.ts` (snapshot ↔ exact markdown for the documents
+  `/markdown` endpoint),
   `notion-snapshot.ts`, `html.ts`, `xml.ts`, `comment-mark.ts`,
   `comment-only-change.ts`,
   `image-markdown.ts`, `agent-context.ts`, `agent-announcement.ts`,

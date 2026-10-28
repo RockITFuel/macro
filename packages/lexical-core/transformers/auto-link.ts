@@ -1,7 +1,7 @@
 import { $createLinkNode, $isLinkNode, LinkNode } from '@lexical/link';
 import type { TextMatchTransformer } from '@lexical/markdown';
 import { $findMatchingParent } from '@lexical/utils';
-import { $createTextNode } from 'lexical';
+import { $createTextNode, $isTextNode } from 'lexical';
 import {
   $createUnlinkedTextNode,
   UnlinkedTextNode,
@@ -92,4 +92,31 @@ export const AUTO_LINK: ConversionOnlyTransformer<TextMatchTransformer> = {
   },
   type: 'text-match',
   conversionOnly: true,
+};
+
+/**
+ * Exports a link whose label alone would autolink to the same URL (a bare
+ * URL, `www.` host or email address) as that bare label, which imports back
+ * through {@link AUTO_LINK}. Other links keep `[text](url)`.
+ */
+export const E_BARE_URL_LINK: TextMatchTransformer = {
+  dependencies: [LinkNode],
+  export: (node) => {
+    if (!$isLinkNode(node) || node.getTitle()) return null;
+    const children = node.getChildren();
+    const text = children[0];
+    if (children.length !== 1 || !$isTextNode(text) || text.getFormat() !== 0)
+      return null;
+    const label = text.getTextContent();
+    const [match] = findAutoLinkMatches(label, 'common-tlds');
+    const whole =
+      match?.index === 0 &&
+      match.lastIndex === label.length &&
+      match.url === node.getURL();
+    return whole ? label : null;
+  },
+  importRegExp: /(?!)/,
+  regExp: /(?!)/,
+  replace: () => {},
+  type: 'text-match',
 };

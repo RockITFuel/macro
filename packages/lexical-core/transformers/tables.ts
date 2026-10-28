@@ -306,7 +306,6 @@ export const E_TABLE_NODE: ElementTransformer = {
     const output: string[] = [];
     for (let row = 0; row < gridMap.length; row++) {
       const rowOutput: string[] = [];
-      let isHeaderRow = false;
 
       for (let column = 0; column < gridMap[row].length; column++) {
         const mapCell = gridMap[row][column];
@@ -326,17 +325,12 @@ export const E_TABLE_NODE: ElementTransformer = {
         } else {
           rowOutput.push('');
         }
-
-        if (
-          mapCell.cell.__headerState === TableCellHeaderStates.ROW ||
-          mapCell.cell.__headerState === TableCellHeaderStates.BOTH
-        ) {
-          isHeaderRow = true;
-        }
       }
 
       output.push(`| ${rowOutput.join(' | ')} |`);
-      if (isHeaderRow) {
+      // A pipe table is only a table with the divider under its first row;
+      // import drops header styling, so this cannot follow the header state.
+      if (row === 0) {
         output.push(`| ${rowOutput.map(() => '---').join(' | ')} |`);
       }
     }
