@@ -8,12 +8,14 @@ import {
   Show,
   useContext,
 } from 'solid-js';
+import type { KanbanAppearance } from '../../../components/kanban/kanban';
 import { KanbanBoard } from '../../../components/kanban/kanban-board';
 import type {
   TaskBoardColumn,
   TaskBoardMove,
   TaskBoardTask,
 } from '../core/task-board';
+import { taskBoardLandingIndex } from '../core/task-board-optimism';
 
 const TaskColumnsContext =
   createContext<Accessor<readonly TaskBoardColumn[]>>();
@@ -23,6 +25,13 @@ const TaskColumnContext = createContext<Accessor<TaskBoardColumn>>();
 function Root(props: {
   columns: readonly TaskBoardColumn[];
   animationScope?: string;
+  /** The Tasks view's look; other task boards (reviews) keep the default. */
+  appearance?: KanbanAppearance;
+  /**
+   * The host's rank. On a panel board a card dragged to another column shows a
+   * placeholder where this order (and the optimistic placement) will put it.
+   */
+  compareTasks?: (left: string, right: string) => number;
   canMove(move: TaskBoardMove): boolean;
   onMove(move: TaskBoardMove): Promise<boolean>;
   ref?: (element: HTMLDivElement) => void;
@@ -39,6 +48,13 @@ function Root(props: {
     <TaskColumnsContext.Provider value={() => props.columns}>
       <KanbanBoard.Root
         mode="cross-column"
+        appearance={props.appearance}
+        landingIndex={
+          props.appearance === 'panel'
+            ? (drop, otherIds) =>
+                taskBoardLandingIndex(otherIds, drop.id, props.compareTasks)
+            : undefined
+        }
         columns={columns()}
         animationScope={props.animationScope}
         canMove={props.canMove}
@@ -84,6 +100,7 @@ function Cards(props: {
   empty?: JSX.Element;
   footer?: JSX.Element;
   itemsLabel?: string;
+  landingLabel?: string;
 }) {
   const column = useContext(TaskColumnContext);
   if (!column) throw new Error('TaskBoard.Columns is required');
@@ -95,6 +112,7 @@ function Cards(props: {
       empty={props.empty}
       footer={props.footer}
       itemsLabel={props.itemsLabel ?? 'tasks'}
+      landingLabel={props.landingLabel}
     >
       {(id) => (
         <Show when={tasksById().get(id)}>{(task) => props.children(task)}</Show>
@@ -107,6 +125,7 @@ function Card(props: {
   task: TaskBoardTask;
   canDrag: boolean;
   pending: boolean;
+  recent?: boolean;
   onOpen(task: TaskBoardTask, event: MouseEvent): void;
   children: JSX.Element;
 }) {
@@ -115,6 +134,7 @@ function Card(props: {
       id={props.task.id}
       canDrag={props.canDrag}
       pending={props.pending}
+      recent={props.recent}
       onClick={(event) => {
         if (event.target.closest('[data-kanban-no-drag], button')) return;
         props.onOpen(props.task, event);

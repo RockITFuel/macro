@@ -53,6 +53,24 @@ export function placementMatches(
   );
 }
 
+/**
+ * Where a task moved into a column lands among that column's other tasks: before
+ * the first one the host's rank puts after it, or at the end without a rank.
+ * The board's landing placeholder and the optimistic placement share it, so the
+ * card lands exactly where the placeholder showed. Adapted from `orderedDropIndex`
+ * in Project Alpha packages/ui/src/kanban (© Luka Pelgrom).
+ */
+export function taskBoardLandingIndex(
+  otherIds: readonly string[],
+  id: string,
+  compare?: (left: string, right: string) => number
+): number {
+  if (!compare) return otherIds.length;
+  const index = otherIds.findIndex((other) => compare(id, other) < 0);
+
+  return index < 0 ? otherIds.length : index;
+}
+
 /** Keep server ordering intact; insert only the moved card using the host's rank. */
 export function projectTaskBoardPlacements(
   columns: readonly TaskBoardColumn[],
@@ -89,10 +107,15 @@ export function projectTaskBoardPlacements(
         continue;
       }
 
-      const before = compare
-        ? tasks.findIndex((item) => compare(task.id, item.id) < 0)
-        : -1;
-      tasks.splice(before < 0 ? tasks.length : before, 0, task);
+      tasks.splice(
+        taskBoardLandingIndex(
+          tasks.map((item) => item.id),
+          task.id,
+          compare
+        ),
+        0,
+        task
+      );
       if (!placement.previousGroupKeys.includes(column.id)) {
         count = count === undefined ? undefined : count + 1;
       }

@@ -34,6 +34,8 @@ const pendingPatches = new Map<string, SoupPatchMessage>();
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let lastFlushAt = Number.NEGATIVE_INFINITY;
 let stopWaitingForMutations: (() => void) | undefined;
+/** Told which entities changed once a round's refetches settle; never awaited by a round. */
+const appliedListeners = new Set<(entityIds: readonly string[]) => void>();
 
 function isSoupPatchMessage(value: unknown): value is SoupPatchMessage {
   if (value === null || typeof value !== 'object') return false;
@@ -77,6 +79,25 @@ async function applyPatches(patches: SoupPatchMessage[]): Promise<void> {
       predicate: (query) => referencesEntity(query, entityIds),
     }),
   ]);
+  const updated = patches
+    .filter((patch) => patch.operation === 'updated')
+    .map((patch) => patch.entityId);
+  if (updated.length === 0) return;
+  for (const listener of appliedListeners) listener(updated);
+}
+
+/**
+ * Calls `listener` with the entities a round of remote changes updated, after
+ * that round's refetches settle, so a view can mark what just changed. The round
+ * never waits for a listener. Returns the unsubscribe.
+ */
+export function onSoupPatchesApplied(
+  listener: (entityIds: readonly string[]) => void
+): () => void {
+  appliedListeners.add(listener);
+  return () => {
+    appliedListeners.delete(listener);
+  };
 }
 
 function flush(): void {

@@ -21,9 +21,20 @@ import { cloneDragPreview } from '../drag-drop/drag-preview';
 import { DragSessionSensors } from '../drag-drop/drag-session-sensors';
 import { findKanbanCollision, LANE_INSERTION_INSET } from './kanban-collision';
 import { createKanbanPointerIntent } from './kanban-pointer-intent';
-import type { KanbanCrossColumnDrop, KanbanDrop } from './kanban-types';
+import type {
+  KanbanAppearance,
+  KanbanCrossColumnDrop,
+  KanbanDrop,
+} from './kanban-types';
 
-export type { KanbanCrossColumnDrop, KanbanDrop } from './kanban-types';
+export type {
+  KanbanAppearance,
+  KanbanCrossColumnDrop,
+  KanbanDrop,
+} from './kanban-types';
+
+/** The card being dragged: its placement and the height it takes in a column. */
+export type KanbanDragSource = { id: string; laneId: string; height: number };
 
 export type KanbanDropVisual = {
   element: HTMLElement;
@@ -36,6 +47,8 @@ type KanbanProps = {
   pointerPlacement?: boolean;
   /** Gate entry to new columns above this pointer speed (pixels/second). */
   targetActivationSpeed?: number;
+  /** Raise the drag preview with a deeper shadow. */
+  liftPreview?: boolean;
 } & (
   | {
       mode?: 'ordered';
@@ -53,6 +66,7 @@ const DragContext = createContext<{
   suppressClick: () => boolean;
   start: (event: MouseEvent) => void;
   target: () => KanbanDrop | undefined;
+  source: () => KanbanDragSource | undefined;
   crossColumn: () => boolean;
 }>();
 
@@ -65,6 +79,7 @@ const HandleContext = createContext<{
 export function Kanban(props: KanbanProps) {
   const [preview, setPreview] = createSignal<HTMLElement>();
   const [target, setTarget] = createSignal<KanbanDrop>();
+  const [source, setSource] = createSignal<KanbanDragSource>();
 
   let origin: { x: number; y: number } | undefined;
   let suppressClick = false;
@@ -206,6 +221,7 @@ export function Kanban(props: KanbanProps) {
     } finally {
       origin = undefined;
       setTarget(undefined);
+      setSource(undefined);
       setPreview(undefined);
       dropVisual = undefined;
     }
@@ -218,7 +234,23 @@ export function Kanban(props: KanbanProps) {
       collisionDetector={collisionDetector}
       onDragStart={({ draggable }) => {
         suppressClick = true;
-        setPreview(cloneDragPreview(draggable.node, 'data-kanban-preview'));
+        setPreview(
+          cloneDragPreview(draggable.node, 'data-kanban-preview', {
+            lift: props.liftPreview,
+          })
+        );
+        const { kind, itemId, laneId } = draggable.data;
+        setSource(
+          kind === 'card' &&
+            typeof itemId === 'string' &&
+            typeof laneId === 'string'
+            ? {
+                id: itemId,
+                laneId,
+                height: draggable.node.getBoundingClientRect().height,
+              }
+            : undefined
+        );
         dropVisual = undefined;
       }}
       onDragEnd={handleDragEnd}
@@ -239,6 +271,7 @@ export function Kanban(props: KanbanProps) {
           cancelled = true;
           clearIntent();
           setTarget(undefined);
+          setSource(undefined);
           document.addEventListener('mouseup', releaseClick, { once: true });
         }}
       />
@@ -246,6 +279,7 @@ export function Kanban(props: KanbanProps) {
         value={{
           suppressClick: () => suppressClick,
           target,
+          source,
           crossColumn: () => props.mode === 'cross-column',
           start: (event) => {
             origin = { x: event.clientX, y: event.clientY };
@@ -273,6 +307,12 @@ export function Kanban(props: KanbanProps) {
 export function useKanbanDropTarget() {
   const drag = useContext(DragContext);
   return () => drag?.target();
+}
+
+/** Read the dragged card, captured when its drag starts. */
+export function useKanbanDragSource() {
+  const drag = useContext(DragContext);
+  return () => drag?.source();
 }
 /** Place at the end of a relatively positioned card list; cards provide their own leading marker. */
 export function KanbanCardInsertion(props: {
@@ -373,6 +413,7 @@ export function KanbanLane(props: {
   label: string;
   'aria-labelledby'?: string;
   canReorder?: boolean;
+  appearance?: KanbanAppearance;
   class?: string;
   onKeyDown?: JSX.EventHandlerUnion<HTMLElement, KeyboardEvent>;
   onPointerEnter?: JSX.EventHandlerUnion<HTMLElement, PointerEvent>;
@@ -427,9 +468,15 @@ export function KanbanLane(props: {
           droppable.ref(node);
         }}
         class={cn(
-          'relative flex w-72 shrink-0 flex-col rounded-xl border border-edge-frame bg-[color-mix(in_oklch,var(--color-panel)_94%,var(--color-ink))] p-2 transition-colors',
+          'relative flex w-72 shrink-0 flex-col rounded-xl border transition-colors',
+          props.appearance === 'panel'
+            ? 'border-edge-muted bg-[color-mix(in_oklch,var(--color-panel)_94%,var(--color-ink))] p-1.5'
+            : 'border-edge-frame bg-[color-mix(in_oklch,var(--color-panel)_94%,var(--color-ink))] p-2',
           draggable.isActiveDraggable && 'opacity-35',
-          highlighted() && 'ring-2 ring-accent',
+          highlighted() &&
+            (props.appearance === 'panel'
+              ? 'border-accent/60'
+              : 'ring-2 ring-accent'),
           props.class
         )}
         data-kanban-drop-target={highlighted() ? 'column' : undefined}
@@ -473,6 +520,9 @@ export function KanbanCard(props: {
   laneId: string;
   canDrag: boolean;
   pending?: boolean;
+  /** Changed elsewhere a moment ago: a ring until it fades. */
+  recent?: boolean;
+  appearance?: KanbanAppearance;
   onClick?: JSX.EventHandler<HTMLElement, MouseEvent>;
   children: JSX.Element;
 }) {
@@ -497,9 +547,13 @@ export function KanbanCard(props: {
       <article
         ref={draggable.ref}
         class={cn(
-          'group relative rounded-lg border border-edge-muted bg-surface-3 shadow-sm transition-shadow hover:border-edge hover:shadow-md',
+          'group relative rounded-lg border border-edge-muted',
+          props.appearance === 'panel'
+            ? 'bg-surface-3 shadow-xs transition-[box-shadow,border-color] hover:border-edge hover:shadow-sm'
+            : 'bg-surface-3 shadow-sm transition-shadow hover:border-edge hover:shadow-md',
           draggable.isActiveDraggable && 'opacity-35',
-          props.pending && 'ring-1 ring-ink/20'
+          props.pending && 'ring-1 ring-ink/20',
+          props.recent && 'ring-2 ring-success'
         )}
         onMouseDown={(event) => {
           if (!event.currentTarget.contains(event.target)) {
@@ -542,6 +596,7 @@ export function KanbanCard(props: {
         }}
         data-row-id={props.id}
         data-kanban-card={props.id}
+        data-recent={props.recent ? '' : undefined}
         aria-busy={props.pending}
       >
         <KanbanCardInsertion laneId={props.laneId} beforeId={props.id} />
