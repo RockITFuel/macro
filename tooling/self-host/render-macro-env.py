@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Render the 1Password items 'Production Macro Environment' (vault Alpha) and
-'Production Macro Environment (email)' (vault Credentials) as one
+"""Render the 1Password items 'Production Macro Environment' and
+'Production Macro Environment (email)' (both vault Alpha) as one
 dotenvy-compatible env file on stdout. A key in both items is an error.
 Values are never logged."""
 import json, subprocess, sys
 ITEMS = [
     ("Production Macro Environment", "Alpha"),
-    ("Production Macro Environment (email)", "Credentials"),
+    ("Production Macro Environment (email)", "Alpha"),
 ]
 bad, seen, dupes = [], {}, []
 for title, vault in ITEMS:
