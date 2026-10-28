@@ -177,6 +177,52 @@ morgo-warsaw (Tailscale only), a router, and Parakeet workers on luka-mini
 `DICTATION_STT_API_BASE`/`DICTATION_STT_API_KEY` are in the env file. Models,
 routing rules and rollout: [services/transcription/LOCAL_STT.md](services/transcription/LOCAL_STT.md).
 
+## Release gate
+
+Before deploying a commit, run the gate on luka-mini:
+
+```sh
+~/macro-build/gate.sh <sha|ref> [--no-suites] [--no-smoke] [--no-unit] [--web-e2e] [--strict-realtime]
+```
+
+Run it as a user unit so it survives the SSH session, and do not wrap it in
+`flock`: it takes `~/macro-build/heavy.lock` itself around each heavy step.
+
+```sh
+systemd-run --user --unit=gate-<sha> --collect -p OOMPolicy=continue bash -c \
+  '~/macro-build/gate.sh <sha> > ~/macro-build/gate/logs/gate-<sha>.out 2>&1'
+```
+
+`~/macro-build/gate.sh` links to `tooling/self-host/gate/gate.sh` in the
+`feat/release-gate` checkout `~/macro-wt/qa`. It builds the commit and its
+merge-base with `origin/main`, runs Macro's own suites (local E2E seed, the
+ignored Rust E2E tests, apps/web vitest, the apps/web Playwright local E2E with
+`--web-e2e` (it cannot sign in on luka-mini yet, so it is opt-in) and
+`cargo test` of the crates the fork changed) on the development instance `gate`
+(ports 45000+, `GATE_PORT_BASE`) for both, and counts only failures the baseline does not have.
+Baseline results are cached per merge-base in `~/macro-build/gate/baseline-<sha>`.
+It then brings the public-mode instance `staging` (ports 43000+, env from
+`staging-env.py`: own secrets, development R2 buckets, signup allowlist, mail
+to its Mailpit, a LiveKit dev server) to the commit with `stack update`, as
+deploy.sh does, and runs `tests/selfhost-smoke` against it. It ends with
+`RESULT: GO` or `RESULT: NO-GO (<n> blocking)` and the evidence paths, and
+exits 0 only on GO. Everything is in `~/macro-build/gate/<sha12>/`:
+`summary.txt` (the verdict), `gate.log`, `logs/` (builds, staging), `suites/`
+(Macro's suites) and `smoke/` (`run.log`, `html/index.html`, traces and
+screenshots of failures in `artifacts/`). Staging stays up at
+`https://localhost:43009/app/` (login codes at `http://127.0.0.1:43008/mailpit`).
+
+- Realtime checks (`@realtime`) are reported, and block only with
+  `--strict-realtime`.
+- A smoke failure caused by the environment (its message starts with
+  `ENVIRONMENT:`) is listed as "not verified" and does not block, for
+  example an upload check when a development R2 bucket (`macro-dev-*`) does
+  not allow the origin `https://localhost:43009` in its CORS rules. All eight
+  allow it next to `https://localhost:42009`.
+- Known defects that predate the fork's changes are ignored by the smoke
+  suite's console/5xx watch but listed under "Known issues seen" (see
+  `tests/selfhost-smoke/lib/fixtures.ts`).
+
 ## Deploying
 
 - `tooling/self-host/release-luka-mini.sh` (on luka-mini) builds and pushes
