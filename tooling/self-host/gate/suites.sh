@@ -46,19 +46,9 @@ ports_free() {
   [ -z "$busy" ] || { docker ps --format '{{.Names}}' | grep -q '^macro-gate-'; } || {
     log "ports $busy in $PB-$((PB + 39)) are taken by another stack; set GATE_PORT_BASE"; return 1; }
 }
-# Containers write root-owned runtime files into the tree (Caddy's data under
-# generated/<instance>, wrangler tmp of the ai-editing worker). The image
-# builds use the tree as context and fail on files they cannot read, so remove
-# those (as root, through a throwaway container) before each bring-up.
-clean_unreadable() {
-  local f
-  find "$HARNESS" \( -path "$HARNESS/target" -o -path "$HARNESS/.git" -o -name node_modules \) -prune -o ! -readable -print 2>/dev/null |
-    while read -r f; do
-      [ -e "$f" ] || continue
-      docker run --rm -v "$(dirname "$f")":/x "${GATE_HELPER_IMAGE:-alpine:3}" rm -rf "/x/$(basename "$f")" >/dev/null 2>&1 &&
-        log "removed root-owned $f"
-    done
-}
+# Containers write root-owned runtime files into the tree; the image builds
+# fail on files they cannot read, so remove those before each bring-up.
+clean_unreadable() { "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/clean-unreadable.sh" "$HARNESS"; }
 up() {
   ports_free || return 1
   clean_unreadable

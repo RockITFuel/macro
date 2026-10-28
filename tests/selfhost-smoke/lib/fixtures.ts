@@ -31,6 +31,14 @@ const IGNORED: { re: RegExp; why: string; known?: boolean }[] = [
     known: true,
     why: 'task duplicate detection calls OpenAI embeddings; self-host has no OPENAI_API_KEY (production neither)',
   },
+  {
+    // The self-host websocket-service is the upstream Bun stub: it answers every
+    // message with the plain text `ping`, which the storage websocket client
+    // JSON.parses (apps/web/src/lib/service-clients/service-storage/websocket.ts).
+    re: /^pageerror: Unexpected token 'p', "ping" is not valid JSON$/,
+    known: true,
+    why: 'websocket-service stub (upstream Bun) answers `ping`, which the storage websocket client JSON.parses',
+  },
 ];
 
 export type Problem = { page: string; what: string };

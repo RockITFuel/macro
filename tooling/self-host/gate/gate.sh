@@ -75,6 +75,10 @@ build_bins() { # <tree> <log>
   heavy "$GATE_DIR/build-bins.sh" "$1" > "$2" 2>&1 || return 1
   tail -1 "$2" | awk '{print $2}'
 }
+# A previous run's containers leave root-owned files (Caddy data under
+# infra/local/generated) in src-cand, which break the image build's context.
+clean_unreadable() { "$GATE_DIR/clean-unreadable.sh" "$1" | tee -a "$LOG"; }
+clean_unreadable "$G/src-cand"
 log "building candidate binaries"
 OUT_CAND=$(build_bins "$G/src-cand" "$A/logs/bins.log") || { log "FAIL candidate build, see $A/logs/bins.log"; echo "RESULT: NO-GO (candidate build failed, see $A/logs/bins.log)" | tee "$A/summary.txt"; exit 1; }
 
