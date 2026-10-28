@@ -134,8 +134,8 @@ identity providers; without them "Connect email → Gmail" answers 404
 URL itself) and `<MACRO_FUSIONAUTH_PUBLIC_URL>/oauth2/callback` (Google
 sign-in) as redirect URIs, enable the Gmail and People APIs, and add the
 Gmail scopes to the consent screen; while the app is unverified only its test
-users can consent. Adding the client changes the kickstart, so FusionAuth
-re-inits on the next `stack up`.
+users can consent. On a running instance, see the note under Outlook on adding
+identity providers without a wipe.
 
 Traefik routes the app origin to the instance's proxy port (`--port-base` + 9,
 HTTPS with the development CA, so skip verification) and the auth host, when
@@ -208,8 +208,20 @@ Outlook (Microsoft Graph) is built in. It needs an Entra app registration with
 redirect URI on `macro.alphamonitoring.app` and the delegated scopes in
 `crates/fusionauth/src/microsoft/oauth.rs`, then `MICROSOFT_CLIENT_ID`,
 `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID=organizations` and
-`MICROSOFT_TOKEN_KMS_KEY_ID` (a LocalStack KMS key) on the authentication
-service. Secrets go in 1Password, vault Alpha.
+`MICROSOFT_TOKEN_KMS_KEY_ID` (a LocalStack KMS key; not needed with
+`MACRO_LOCAL_ENCRYPTION_KEY`) on the authentication service. Secrets go in
+1Password, vault Alpha. New Outlook connections also need
+`OUTLOOK_CONNECTIONS_ENABLED=true`; without it the Connect email dialog offers
+Gmail only. With the three `MICROSOFT_*` values the kickstart creates the
+`microsoft` identity provider the link is recorded under.
+
+The kickstart only runs on an empty FusionAuth, and `stack up` wipes the
+instance. On a running instance, create a missing identity provider through the
+FusionAuth API instead (`POST /api/identity-provider/<id>` with the body
+`tooling/xtask/crates/xtask_local/src/local/kickstart.rs` builds), and apply
+env changes with `stack down
+--keep-data` and `stack start`: `update` with unchanged binaries does not
+restart the services.
 
 ## Speech-to-text
 

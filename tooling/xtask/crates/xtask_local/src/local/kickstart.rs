@@ -107,6 +107,34 @@ impl GithubIdp {
     }
 }
 
+/// The Microsoft Entra client the local `microsoft` identity provider records
+/// Outlook links under. Optional on the same terms as [`GoogleIdp`]: without it
+/// the kickstart is unchanged and `POST /link/outlook` answers 404.
+pub struct MicrosoftIdp {
+    pub client_id: String,
+    pub client_secret: String,
+    pub tenant_id: String,
+}
+
+impl MicrosoftIdp {
+    /// Extract the Entra client from the resolved run env: the same
+    /// `MICROSOFT_CLIENT_ID`/`MICROSOFT_CLIENT_SECRET`/`MICROSOFT_TENANT_ID`
+    /// `authentication_service` builds its authorization URL from. The service
+    /// requires all three or none, so a partial set creates nothing here.
+    pub fn from_env(env: &BTreeMap<String, String>) -> Option<Self> {
+        let value = |key: &str| {
+            env.get(key)
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        };
+        Some(MicrosoftIdp {
+            client_id: value("MICROSOFT_CLIENT_ID")?,
+            client_secret: value("MICROSOFT_CLIENT_SECRET")?,
+            tenant_id: value("MICROSOFT_TENANT_ID")?,
+        })
+    }
+}
+
 /// The secrets the kickstart writes into FusionAuth, read from the same
 /// resolved env the services get, so an `--env-file` override reaches both
 /// sides. Each falls back to its [`identity`] fixture.
@@ -236,6 +264,7 @@ pub fn build(
     reconcile_lambda_body: &str,
     google: Option<&GoogleIdp>,
     github: Option<&GithubIdp>,
+    microsoft: Option<&MicrosoftIdp>,
 ) -> Value {
     let app_id = identity::APPLICATION_ID;
     let tenant_id = identity::TENANT_ID;
@@ -566,6 +595,44 @@ pub fn build(
                     "uniqueIdClaim": "id",
                     "emailClaim": "email",
                     "usernameClaim": "login",
+                },
+                "applicationConfiguration": json!({
+                    identity::APPLICATION_ID: { "enabled": true, "createRegistration": true }
+                }),
+            }}
+        }));
+    }
+
+    // The `microsoft` identity provider, when an Entra client is configured
+    // (see `MicrosoftIdp::from_env`). Mirrors upstream's Pulumi definition in
+    // `infra/stacks/fusionauth-instance`. As with GitHub, Macro builds the
+    // authorization URL and exchanges the code itself; FusionAuth only records
+    // the resulting link, so these endpoints keep the provider well-formed.
+    if let Some(microsoft) = microsoft {
+        let authority = format!(
+            "https://login.microsoftonline.com/{}/oauth2/v2.0",
+            microsoft.tenant_id
+        );
+        requests.push(json!({
+            "method": "POST",
+            "url": format!("/api/identity-provider/{}", identity::MICROSOFT_IDP_ID),
+            "body": { "identityProvider": {
+                "type": "OpenIDConnect",
+                "name": "microsoft",
+                "enabled": true,
+                "debug": true,
+                "buttonText": "Microsoft",
+                "linkingStrategy": "LinkByEmail",
+                "oauth2": {
+                    "authorization_endpoint": format!("{authority}/authorize"),
+                    "token_endpoint": format!("{authority}/token"),
+                    "userinfo_endpoint": "https://graph.microsoft.com/oidc/userinfo",
+                    "client_id": microsoft.client_id.as_str(),
+                    "client_secret": microsoft.client_secret.as_str(),
+                    "clientAuthenticationMethod": "client_secret_basic",
+                    "scope": "openid email offline_access profile Mail.ReadWrite Mail.Send",
+                    "uniqueIdClaim": "sub",
+                    "emailClaim": "email",
                 },
                 "applicationConfiguration": json!({
                     identity::APPLICATION_ID: { "enabled": true, "createRegistration": true }
