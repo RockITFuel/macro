@@ -114,7 +114,9 @@ export function MediaLightbox(props: { lightbox: MediaLightboxState }) {
                         }}
                       >
                         <Index each={shown.formats}>
-                          {(format) => <LightboxVideoSource ref={format()} />}
+                          {(format) => (
+                            <LightboxVideoSource format={format()} />
+                          )}
                         </Index>
                       </video>
                     </Match>
@@ -166,11 +168,11 @@ function LightboxImage(props: { refs: MediaRef[]; name: string }) {
   );
 }
 
-function LightboxVideoSource(props: { ref: MediaRef }) {
-  const source = useMediaUrl(() => props.ref.documentId);
+function LightboxVideoSource(props: { format: MediaRef }) {
+  const source = useMediaUrl(() => props.format.documentId);
   return (
     <Show when={source.url()}>
-      {(url) => <source src={url()} type={videoMimeType(props.ref.name)} />}
+      {(url) => <source src={url()} type={videoMimeType(props.format.name)} />}
     </Show>
   );
 }

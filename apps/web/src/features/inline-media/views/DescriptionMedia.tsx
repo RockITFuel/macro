@@ -44,13 +44,14 @@ export function DescriptionMedia(props: {
   createEffect(
     on(props.editor, (editor) => {
       if (!editor || !media) return;
-      const collect = () =>
+      const collect = () => {
         setRefs(
           collectMedia(
             editor.getEditorState().read($descriptionMediaMarkdown),
             media.origin
           )
         );
+      };
       collect();
       onCleanup(editor.registerUpdateListener(collect));
     })

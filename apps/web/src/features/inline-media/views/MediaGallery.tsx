@@ -204,7 +204,7 @@ function VideoView(props: { entry: MediaEntry }) {
         class="block aspect-video h-auto w-full"
       >
         <Index each={props.entry.formats}>
-          {(format) => <VideoSource ref={format()} />}
+          {(format) => <VideoSource format={format()} />}
         </Index>
       </video>
       <Show when={open}>
@@ -225,12 +225,15 @@ function VideoView(props: { entry: MediaEntry }) {
 }
 
 /** One stored format; `#t` makes the browser paint the first frame as poster. */
-function VideoSource(props: { ref: MediaRef }) {
-  const source = useMediaUrl(() => props.ref.documentId);
+function VideoSource(props: { format: MediaRef }) {
+  const source = useMediaUrl(() => props.format.documentId);
   return (
     <Show when={source.url()}>
       {(url) => (
-        <source src={`${url()}#t=0.001`} type={videoMimeType(props.ref.name)} />
+        <source
+          src={`${url()}#t=0.001`}
+          type={videoMimeType(props.format.name)}
+        />
       )}
     </Show>
   );
