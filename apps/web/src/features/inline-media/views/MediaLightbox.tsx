@@ -4,6 +4,7 @@ import ArrowSquareOutIcon from '@icon/system/regular/arrow-square-out.svg';
 import CaretLeftIcon from '@icon/system/regular/caret-left.svg';
 import CaretRightIcon from '@icon/system/regular/caret-right.svg';
 import XIcon from '@icon/system/regular/x.svg';
+import { makeEventListener } from '@solid-primitives/event-listener';
 import { Button, Dialog } from '@ui';
 import { createSignal, Index, Match, Show, Switch } from 'solid-js';
 import { videoMimeType } from '../core/media-groups';
@@ -45,9 +46,12 @@ export function MediaLightbox(props: { lightbox: MediaLightboxState }) {
     if (Math.abs(distance) < SWIPE_DISTANCE) return;
     lightbox().step(distance > 0 ? 1 : -1);
   };
+  // On the document, so the keys keep working when stepping removes the
+  // focused player.
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === 'ArrowRight') lightbox().step(1);
     else if (event.key === 'ArrowLeft') lightbox().step(-1);
+    else if (event.key === 'Escape') close();
     else return;
     event.preventDefault();
   };
@@ -66,10 +70,10 @@ export function MediaLightbox(props: { lightbox: MediaLightboxState }) {
           <div
             data-inline-media-lightbox
             class="flex size-full flex-col"
-            onKeyDown={onKeyDown}
             onTouchStart={onTouchStart}
             onTouchEnd={onTouchEnd}
           >
+            <DocumentKeys onKeyDown={onKeyDown} />
             <header class="flex items-center gap-2 bg-page p-2 pt-[max(var(--safe-top,0px),0.5rem)] text-ink">
               <Dialog.Title class="min-w-0 flex-1 truncate text-sm font-medium">
                 {name()}
@@ -193,4 +197,10 @@ function OpenInNewTab(props: { documentId: string }) {
       )}
     </Show>
   );
+}
+
+/** Listens on the document while mounted. */
+function DocumentKeys(props: { onKeyDown: (event: KeyboardEvent) => void }) {
+  makeEventListener(document, 'keydown', (event) => props.onKeyDown(event));
+  return null;
 }

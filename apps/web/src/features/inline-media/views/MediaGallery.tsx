@@ -146,6 +146,7 @@ function MediaStatus(props: { failed: boolean; children?: JSX.Element }) {
 function ImageView(props: { entry: MediaEntry }) {
   let button!: HTMLButtonElement;
   const source = useMediaUrl(() => props.entry.primary.documentId);
+  const [loaded, setLoaded] = createSignal(false);
   const open = useLightboxSlot(
     () => button,
     () => props.entry
@@ -171,7 +172,12 @@ function ImageView(props: { entry: MediaEntry }) {
             alt={name()}
             loading="lazy"
             decoding="async"
-            class="block h-auto w-full"
+            // Hold a 16:9 box until the picture's own size is known.
+            class={cn(
+              'block h-auto w-full',
+              !loaded() && 'aspect-video bg-surface'
+            )}
+            onLoad={() => setLoaded(true)}
           />
         )}
       </Show>
