@@ -49,16 +49,3 @@ export function createMediaLayout(
     },
   };
 }
-
-/** Widths for hosts without a shared document: kept for this view only. */
-export function createLocalMediaLayout(): MediaLayout {
-  const [widths, setWidths] = createSignal<Record<string, number>>({});
-  return {
-    width: (documentId) => widths()[documentId],
-    setWidth: (documentId, width) =>
-      setWidths((prev) => ({
-        ...prev,
-        [documentId]: Math.max(MIN_MEDIA_WIDTH, Math.round(width)),
-      })),
-  };
-}

@@ -28,7 +28,7 @@ function kindFromBlockName(blockName: unknown): MediaKind | undefined {
 }
 
 /** The media a URL points at when it is an `/app/image|video/<id>` link of `origin`. */
-export function parseAppMediaUrl(
+function parseAppMediaUrl(
   href: string,
   origin: string
 ): Pick<MediaRef, 'documentId' | 'kind'> | undefined {
