@@ -1,5 +1,6 @@
+import { useInlineMedia } from '@app/features/inline-media/context/inline-media-context';
+import { MessageMedia } from '@app/features/inline-media/views/MessageMedia';
 import { StaticMarkdown } from '@core/component/LexicalMarkdown/component/core/StaticMarkdown';
-
 import { channelTheme } from '@core/component/LexicalMarkdown/theme';
 import { isEmojiOnly } from '@core/util/string';
 import CaretRight from '@icon/system/regular/caret-right.svg';
@@ -36,6 +37,7 @@ export function Content(props: ContentProps) {
   const message = useMessage();
   const termsLookup = useSearchHighlightTermsLookup();
   const collapseLongContent = useCollapseLongContent();
+  const inlineMedia = useInlineMedia();
 
   // The body only: an agent message's leading session node is chrome the
   // sender line renders (`Message.AgentSessionLink`), not part of the text.
@@ -47,16 +49,34 @@ export function Content(props: ContentProps) {
 
   createSearchHighlightOverlay({ root: markdownRoot, content, terms });
 
+  const markdown = (text: string, rootRef?: (el: HTMLDivElement) => void) => (
+    <StaticMarkdown
+      markdown={text}
+      theme={channelTheme}
+      target="internal"
+      rootRef={rootRef}
+    />
+  );
   const body = () => (
-    <>
-      <StaticMarkdown
-        markdown={content()}
-        theme={channelTheme}
-        target="internal"
-        rootRef={setMarkdownRoot}
-      />
-      <MentionedImages content={content()} />
-    </>
+    <Show
+      when={inlineMedia}
+      fallback={
+        <>
+          {markdown(content(), setMarkdownRoot)}
+          <MentionedImages content={content()} />
+        </>
+      }
+    >
+      {(media) => (
+        <div ref={setMarkdownRoot}>
+          <MessageMedia
+            content={content()}
+            origin={media().origin}
+            markdown={(text) => markdown(text)}
+          />
+        </div>
+      )}
+    </Show>
   );
 
   return (

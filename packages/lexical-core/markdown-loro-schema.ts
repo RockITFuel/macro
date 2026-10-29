@@ -29,6 +29,9 @@ markdownNodeSchema.definition.children.itemSchema = markdownNodeSchema;
 
 export const MARKDOWN_LORO_SCHEMA = schema({
   root: markdownNodeSchema,
+  // Display width per embedded image or video document, keyed by its id
+  // (apps/web features/inline-media). Not part of the text.
+  mediaLayout: schema.LoroMap({}, { required: false, allowUnknown: true }),
 });
 
 export type MarkdownLoroSchemaType = typeof MARKDOWN_LORO_SCHEMA;

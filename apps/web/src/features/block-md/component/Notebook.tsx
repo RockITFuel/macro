@@ -1,3 +1,5 @@
+import { DescriptionMedia } from '@app/features/inline-media/views/DescriptionMedia';
+import { InlineMediaProvider } from '@app/features/inline-media/views/InlineMediaProvider';
 import { createSizeBreakpoints } from '@app/util/create-size-breakpoints';
 import { CommentMargin } from '@block-md/comments/CommentMargin';
 import { useMacroMentionLinkResolver } from '@components/app/split-layout/split-router/mention-links';
@@ -93,7 +95,7 @@ export function Notebook(props: {
   hotkeyScope: string | undefined;
   autoFocus: boolean;
 }) {
-  const { element: blockElement, state } = useMarkdownDocument();
+  const { element: blockElement, state, permissions } = useMarkdownDocument();
   const { comments: commentState, params } = state;
   const { md, setMd } = state.editor;
   const { displayName: documentName } = useMarkdownName();
@@ -375,17 +377,23 @@ export function Notebook(props: {
           <TaskDuplicateMatchPill />
         </div>
         <ParamsProvider state={params}>
-          <MarkdownEditor
-            resolveAppLink={resolveAppLink}
-            loroManager={props.loroManager}
-            showLexicalStateDebugger={
-              canUseLexicalStateDebugger() && showLexicalStateDebugger()
-            }
-            onLexicalStateDebuggerClose={() =>
-              setShowLexicalStateDebugger(false)
-            }
-          />
-          <DocumentDiscussion editorHasFocus={editorHasFocus()} />
+          <InlineMediaProvider
+            doc={props.loroManager.doc}
+            canEdit={permissions.canEdit}
+          >
+            <MarkdownEditor
+              resolveAppLink={resolveAppLink}
+              loroManager={props.loroManager}
+              showLexicalStateDebugger={
+                canUseLexicalStateDebugger() && showLexicalStateDebugger()
+              }
+              onLexicalStateDebuggerClose={() =>
+                setShowLexicalStateDebugger(false)
+              }
+            />
+            <DescriptionMedia editor={() => md.editor} />
+            <DocumentDiscussion editorHasFocus={editorHasFocus()} />
+          </InlineMediaProvider>
         </ParamsProvider>
       </div>
       <div
