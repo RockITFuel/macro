@@ -929,6 +929,27 @@ run. A query already fetching from the server must finish normally rather than
 be canceled/reissued on return. Verify task status, mention search, and history
 catch up after switching tabs, including when the cache-owning tab is hidden.
 
+## Images and videos in a task
+
+Links to Macro image and video documents (`/app/image/<id>`, `/app/video/<id>`
+on the app's own origin, as links or `@` mentions) render as media in an open
+task: in a Discussion comment where the link stood (a line of only links becomes
+a gallery; links inside a sentence stay links and show below the text), and in a
+gallery below the description. Links to other origins, code blocks and SVG files
+stay links. Videos play inline from presigned URLs with `preload="metadata"`;
+files that differ only in extension (`clip.webm`, `clip.mp4`) become one video
+with both sources, and `-light`/`-dark` names become one tile with a Light/Dark
+switch that follows the app theme.
+
+Drag a tile's bottom-right handle (or focus it and use ←/→) to resize it. Editors
+store the width in the task document's `mediaLayout` Loro map, so other sessions
+see it live and it survives a reload; view-only users resize for their own view
+only. Clicking an image or a video's `Enlarge` button opens a full-screen
+lightbox over every tile in the task: ←/→, the arrow buttons, or a swipe step
+through them, Escape closes, and a video continues from its tile's position.
+The code lives in `apps/web/src/features/inline-media`; channels without the
+task's provider keep their old image rendering.
+
 ## Messages as tasks
 
 In any channel composer, toggle the `Task` switch before sending to create a task from the
